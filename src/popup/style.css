@@ -247,6 +247,7 @@ body {
   letter-spacing: 0.1px;
   color: var(--md-on-surface-variant);
 }
+.location-clock[hidden] { display: none; }
 .location-clock svg { color: var(--md-on-surface-variant); flex-shrink: 0; }
 .location-clock #clockTime { font-weight: 500; font-variant-numeric: tabular-nums; color: var(--md-on-surface); }
 .location-clock .clock-sep { color: var(--md-outline); }
@@ -507,6 +508,44 @@ body {
   z-index: 1;
 }
 
+.proxy-list { display: block; }
+/* Selectable profiles are real buttons (keyboard + screen reader friendly). */
+.proxy-option {
+  width: 100%;
+  margin-bottom: 8px;
+  font-family: var(--md-font);
+  text-align: left;
+}
+.proxy-option .proxy-info { display: flex; flex-direction: column; }
+.use-badge {
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.5px;
+  padding: 4px 10px;
+  border-radius: var(--md-corner-sm);
+  font-weight: 500;
+  background: var(--md-surface-container-highest);
+  color: var(--md-on-surface-variant);
+  position: relative;
+  z-index: 1;
+}
+.proxy-selected { cursor: default; }
+.proxy-selected::before { display: none; }
+.active-badge.is-paused { background: var(--md-surface-container-highest); color: var(--md-on-surface-variant); }
+.btn-disconnect { height: 32px; padding: 0 10px; position: relative; z-index: 1; }
+.proxy-add-row { text-align: center; margin-top: 4px; }
+.proxy-error {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: var(--md-corner-sm);
+  background: var(--md-error-container);
+  color: var(--md-on-error-container);
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0.4px;
+}
+.proxy-error[hidden] { display: none; }
+
 .empty-proxy {
   padding: 16px;
   text-align: center;
@@ -543,16 +582,16 @@ body {
 
 /* ============================================================
    Disabled (master OFF) state
+   Only the status visuals dim: picking a city or using the IP stays
+   available, because choosing a place is how the user turns Nomada on.
    ============================================================ */
-body.is-disabled .globe-section,
-body.is-disabled .location-selector,
-body.is-disabled .section {
-  opacity: 0.45;
-  filter: saturate(0.4);
+.globe-wrap, .location-clock, .location-coords, .section {
   transition: opacity 0.2s, filter 0.2s;
 }
-body.is-disabled .globe-section *,
-body.is-disabled .location-selector *,
-body.is-disabled .section * {
-  pointer-events: none;
+body.is-disabled .globe-wrap,
+body.is-disabled .location-clock,
+body.is-disabled .location-coords,
+body.is-disabled .section {
+  opacity: 0.5;
+  filter: saturate(0.4);
 }

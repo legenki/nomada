@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LOCATIONS, findLocationByKey, findLocationByCountry } from '../src/lib/locations';
+import { LOCATIONS, findLocationByKey, countryOfGeo } from '../src/lib/locations';
 import { COUNTRY_TO_LOCATION } from '../src/lib/country-locales';
 
 describe('LOCATIONS', () => {
@@ -33,14 +33,17 @@ describe('findLocationByKey', () => {
   });
 });
 
-describe('findLocationByCountry', () => {
-  it('finds location for RU', () => {
-    const loc = findLocationByCountry('RU');
-    expect(loc?.key).toBe('saintPetersburg');
+describe('countryOfGeo', () => {
+  it('prefers the stored country code (IP-resolved locations)', () => {
+    expect(countryOfGeo({ enabled: true, countryCode: 'kz', cityName: 'Almaty' })).toBe('KZ');
   });
 
-  it('is case-insensitive', () => {
-    expect(findLocationByCountry('jp')?.key).toBe('tokyo');
+  it('falls back to the preset city', () => {
+    expect(countryOfGeo({ enabled: true, locationKey: 'buenosAires' })).toBe('AR');
+  });
+
+  it('is undefined when no place is set', () => {
+    expect(countryOfGeo({ enabled: false })).toBeUndefined();
   });
 });
 

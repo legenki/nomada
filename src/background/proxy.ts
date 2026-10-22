@@ -1,74 +1,82 @@
-import type { ProxyProfile, WooPortalData } from '../types';
-import { readData, writeData } from '../lib/storage';
-import { refreshIcon } from './icon';
+import type { ActionResult, ProxyProfile, WooPortalData } from '../types';
 
 function generatePAC(profile: ProxyProfile): string {
   const { type, host, port } = profile.config;
   const { domains, mode } = profile.config.routingRules;
-  const proxyStr = type === 'socks5' ? `SOCKS5 ${host}:${port}` : `PROXY ${host}:${port}`;
+  // JSON.stringify quotes/escapes values so user input can't break out of the PAC source.
+  const proxyStr = JSON.stringify(`${type === 'socks5' ? 'SOCKS5' : 'PROXY'} ${host}:${port}`);
   const list = JSON.stringify(domains);
   if ((mode ?? 'whitelist') === 'whitelist') {
-    return `function FindProxyForURL(url,host){var w=${list};for(var i=0;i<w.length;i++){if(shExpMatch(host,w[i]))return "${proxyStr}";}return "DIRECT";}`;
+    return `function FindProxyForURL(url,host){var w=${list};for(var i=0;i<w.length;i++){if(shExpMatch(host,w[i]))return ${proxyStr};}return "DIRECT";}`;
   }
-  return `function FindProxyForURL(url,host){var b=${list};for(var i=0;i<b.length;i++){if(shExpMatch(host,b[i]))return "DIRECT";}return "${proxyStr}";}`;
+  return `function FindProxyForURL(url,host){var b=${list};for(var i=0;i<b.length;i++){if(shExpMatch(host,b[i]))return "DIRECT";}return ${proxyStr};}`;
 }
 
-function toPacUrl(input: string): { url: string } | null {
+function toPacUrl(input: string): string | null {
   const t = input.trim();
   if (!t) return null;
-  if (/^https?:\/\//i.test(t) || /^file:\/\//i.test(t)) return { url: t };
-  if (/^[a-zA-Z]:[\\\/]/.test(t)) return { url: 'file:///' + t.replace(/\\/g, '/') };
-  if (t.startsWith('/')) return { url: 'file://' + t };
+  if (/^https?:\/\//i.test(t) || /^file:\/\//i.test(t)) return t;
+  if (/^[a-zA-Z]:[\\/]/.test(t)) return 'file:///' + t.replace(/\\/g, '/');
+  if (t.startsWith('/')) return 'file://' + t;
   return null;
 }
 
-export async function activateProxy(profileId: string): Promise<{ success: boolean; error?: string }> {
+/** Translate a profile into a chrome.proxy config, or throw a user-facing error. */
+export function buildProxyConfig(profile: ProxyProfile): chrome.proxy.ProxyConfig {
+  const { type, host, port, routingRules } = profile.config;
+  if (type === 'pac') {
+    const url = toPacUrl(profile.config.pacUrl);
+    if (!url) throw new Error('Invalid PAC URL');
+    return { mode: 'pac_script', pacScript: { url } };
+  }
+  if (!host) throw new Error('Proxy host is missing');
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Proxy port must be 1–65535');
+  if (routingRules?.enabled && routingRules.domains.length > 0) {
+    return { mode: 'pac_script', pacScript: { data: generatePAC(profile) } };
+  }
+  return { mode: 'fixed_servers', rules: { singleProxy: { scheme: type, host, port } } };
+}
+
+export function activeProfileOf(data: WooPortalData): ProxyProfile | undefined {
+  if (!data.enabled || data.mode !== 'profile' || !data.activeProfileId) return undefined;
+  return data.profiles.find(p => p.id === data.activeProfileId);
+}
+
+/**
+ * Make Chrome's proxy match the stored state. With no active profile the
+ * setting is released (clear), not forced to "system": OFF must behave as if
+ * the extension weren't installed and leave room for other proxy tools.
+ * `set` replaces the previous config atomically — clearing first would let
+ * traffic escape the proxy for a moment.
+ */
+export async function applyProxy(data: WooPortalData): Promise<ActionResult> {
+  const profile = activeProfileOf(data);
   try {
-    const data = await readData();
-    const profile = data.profiles.find(p => p.id === profileId);
-    if (!profile) throw new Error('Profile not found');
-
-    await chrome.proxy.settings.clear({ scope: 'regular' });
-    await new Promise(r => setTimeout(r, 100));
-
-    const type = profile.config.type;
-    let config: chrome.proxy.ProxyConfig;
-
-    if (type === 'pac') {
-      const resolved = toPacUrl(profile.config.pacUrl);
-      if (!resolved) throw new Error('Invalid PAC URL');
-      config = { mode: 'pac_script', pacScript: { url: resolved.url } };
+    if (profile) {
+      await chrome.proxy.settings.set({ value: buildProxyConfig(profile), scope: 'regular' });
     } else {
-      const { host, port, routingRules } = profile.config;
-      if (!host || !port) throw new Error('Missing host or port');
-      if (routingRules?.enabled && routingRules.domains.length > 0) {
-        config = { mode: 'pac_script', pacScript: { data: generatePAC(profile) } };
-      } else {
-        config = { mode: 'fixed_servers', rules: { singleProxy: { scheme: type, host, port } } };
-      }
+      await chrome.proxy.settings.clear({ scope: 'regular' });
     }
-
-    await chrome.proxy.settings.set({ value: config, scope: 'regular' });
-    console.log('[wooPortal] proxy activated:', JSON.stringify(config));
-    const updated: WooPortalData = { ...data, mode: 'profile', activeProfileId: profileId };
-    await writeData(updated);
-    await refreshIcon();
+    await applyWebRtcPolicy(!!profile);
     return { success: true };
   } catch (e) {
-    console.error('[wooPortal] activateProxy failed:', e);
     return { success: false, error: (e as Error).message };
   }
 }
 
-export async function deactivateProxy(): Promise<{ success: boolean; error?: string }> {
+/**
+ * While a proxy is active, stop WebRTC from opening direct UDP paths that would
+ * reveal the real IP behind the proxy.
+ */
+async function applyWebRtcPolicy(proxyActive: boolean): Promise<void> {
+  const setting = chrome.privacy.network.webRTCIPHandlingPolicy;
   try {
-    await chrome.proxy.settings.clear({ scope: 'regular' });
-    await chrome.proxy.settings.set({ value: { mode: 'system' }, scope: 'regular' });
-    const data = await readData();
-    await writeData({ ...data, mode: 'system', activeProfileId: undefined });
-    await refreshIcon();
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: (e as Error).message };
+    if (proxyActive) {
+      await setting.set({ value: 'disable_non_proxied_udp' });
+    } else {
+      await setting.clear({});
+    }
+  } catch {
+    // Controlled by policy or another extension — nothing we can do.
   }
 }

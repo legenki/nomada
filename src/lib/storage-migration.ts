@@ -2,84 +2,69 @@ import type { WooPortalData, GeoSettings } from '../types';
 
 export const SCHEMA_VERSION = 3 as const;
 
+/** Max remembered "Not now" answers to sync suggestions. */
+export const MAX_SYNC_DISMISSED = 50;
+
 const DEFAULT_GEO: GeoSettings = { enabled: false };
 
+// A fresh install starts OFF: nothing is spoofed until the user picks a place,
+// so the switch never claims protection that isn't there.
 const DEFAULT_DATA: WooPortalData = {
   version: 3,
-  enabled: true,
+  enabled: false,
   mode: 'system',
   profiles: [],
   activeProfileId: undefined,
-  lastProfileId: undefined,
   geo: DEFAULT_GEO,
   syncEnabled: true,
   syncDismissed: [],
   settings: { notifyChange: true, notifyError: true },
 };
 
-function isCloaqV1(raw: Record<string, unknown>): boolean {
-  // cloaq stored: timezone, lat, lon, configuration at top level (no version field)
-  return !raw.version && (raw.timezone !== undefined || raw.lat !== undefined);
-}
-
-function isXProxyV2(raw: Record<string, unknown>): boolean {
-  return raw.version === 2 && Array.isArray(raw.profiles);
+/** Older builds stored "profileId:CC" pairs; keep only unique country codes. */
+function normalizeDismissed(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const codes = raw
+    .filter((d): d is string => typeof d === 'string')
+    .map(d => d.split(':').pop()!.toUpperCase())
+    .filter(Boolean);
+  return [...new Set(codes)].slice(-MAX_SYNC_DISMISSED);
 }
 
 export function migrateData(raw: unknown): WooPortalData {
-  if (!raw || typeof raw !== 'object') return { ...DEFAULT_DATA };
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_DATA, geo: { ...DEFAULT_GEO } };
 
   const data = raw as Record<string, unknown>;
+  const profiles = Array.isArray(data.profiles) ? data.profiles as WooPortalData['profiles'] : [];
+  const hasProfile = (id: unknown) => typeof id === 'string' && profiles.some(p => p?.id === id);
 
-  // Already v3
-  if (data.version === SCHEMA_VERSION) {
-    const profiles = Array.isArray(data.profiles) ? data.profiles : [];
-    const activeIdValid = data.activeProfileId &&
-      profiles.some((p: unknown) => (p as Record<string, unknown>)?.id === data.activeProfileId);
-    const rawMode = data.mode as string;
-    const mode: WooPortalData['mode'] = (['direct', 'system', 'profile'] as const).includes(rawMode as WooPortalData['mode'])
-      ? (rawMode === 'profile' && !activeIdValid ? 'system' : rawMode as WooPortalData['mode'])
-      : 'system';
-    return {
-      ...DEFAULT_DATA,
-      ...(data as Partial<WooPortalData>),
-      version: 3,
-      enabled: data.enabled === undefined ? true : !!data.enabled,
-      mode,
-      profiles: profiles as WooPortalData['profiles'],
-      activeProfileId: mode === 'profile' ? data.activeProfileId as string : undefined,
-      lastProfileId: (data.lastProfileId as string | undefined) ?? (mode === 'profile' ? data.activeProfileId as string : undefined),
-    };
+  // Installs that predate the master switch were effectively always ON.
+  const enabled = data.enabled === undefined ? true : !!data.enabled;
+
+  // Older builds cleared the profile on OFF and parked it in lastProfileId;
+  // now OFF keeps the selection, so move it back.
+  let activeProfileId = data.activeProfileId;
+  let rawMode = data.mode;
+  if (!enabled && rawMode !== 'profile' && hasProfile(data.lastProfileId)) {
+    rawMode = 'profile';
+    activeProfileId = data.lastProfileId;
   }
 
-  // Migrate from cloaq v1
-  if (isCloaqV1(data)) {
-    const geo: GeoSettings = {
-      enabled: !!(data.timezone || data.lat),
-      timezone: data.timezone as string | undefined,
-      locale: data.locale as string | undefined,
-      lat: data.lat as number | undefined,
-      lon: data.lon as number | undefined,
-      locationKey: data.configuration !== 'browserDefault' && data.configuration !== 'custom'
-        ? data.configuration as string
-        : undefined,
-    };
-    return { ...DEFAULT_DATA, geo };
-  }
+  // 'direct' was removed as a mode; anything other than a valid profile is 'system'.
+  const mode: WooPortalData['mode'] =
+    rawMode === 'profile' && hasProfile(activeProfileId) ? 'profile' : 'system';
 
-  // Migrate from x-proxy v2
-  if (isXProxyV2(data)) {
-    const profiles = Array.isArray(data.profiles) ? data.profiles : [];
-    const activeIdValid = data.activeProfileId &&
-      profiles.some((p: unknown) => (p as Record<string, unknown>)?.id === data.activeProfileId);
-    const mode: WooPortalData['mode'] = activeIdValid ? 'profile' : 'system';
-    return {
-      ...DEFAULT_DATA,
-      profiles: profiles as WooPortalData['profiles'],
-      mode,
-      activeProfileId: mode === 'profile' ? data.activeProfileId as string : undefined,
-    };
-  }
-
-  return { ...DEFAULT_DATA };
+  const migrated: WooPortalData & { lastProfileId?: unknown } = {
+    ...DEFAULT_DATA,
+    ...(data as Partial<WooPortalData>),
+    version: SCHEMA_VERSION,
+    enabled,
+    mode,
+    profiles,
+    activeProfileId: mode === 'profile' ? activeProfileId as string : undefined,
+    geo: { ...DEFAULT_GEO, ...(data.geo as GeoSettings | undefined) },
+    syncDismissed: normalizeDismissed(data.syncDismissed),
+  };
+  delete migrated.lastProfileId;
+  return migrated;
 }

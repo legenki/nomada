@@ -1,3 +1,5 @@
+import type { GeoSettings } from '../types';
+
 export interface Location {
   key: string;
   name: string;
@@ -53,6 +55,8 @@ export function findLocationByKey(key: string): Location | undefined {
   return LOCATIONS.find(l => l.key === key);
 }
 
-export function findLocationByCountry(countryCode: string): Location | undefined {
-  return LOCATIONS.find(l => l.countryCode === countryCode.toUpperCase());
+/** Country of the current location, whether it's a preset city or came from an IP lookup. */
+export function countryOfGeo(geo: GeoSettings): string | undefined {
+  if (geo.countryCode) return geo.countryCode.toUpperCase();
+  return geo.locationKey ? findLocationByKey(geo.locationKey)?.countryCode : undefined;
 }

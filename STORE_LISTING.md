@@ -39,7 +39,7 @@ Pick a city and your browser's geolocation reports those coordinates to every si
 Your timezone shifts to the chosen city — see its live local time right in the popup.
 
 🗣️ Switch your locale
-Language and regional formatting (Accept-Language) update to match the destination.
+Browser language (navigator.language and the Accept-Language header) and regional formatting update to match the destination.
 
 🔌 Route through a proxy
 Add HTTP, HTTPS, SOCKS5 or PAC proxy profiles with optional authentication. One click to connect.
@@ -74,7 +74,7 @@ WHY NOMADA
 PRIVACY
 ━━━━━━━━━━━━━━━━━━━━
 
-Nomada stores all settings locally in your browser. It does not collect, sell or transmit your personal data. The only network request is an optional IP-location lookup (ipwho.is) used by the "Use my IP location" feature, made only when you click it.
+Nomada stores all settings locally in your browser. It does not collect, sell or transmit your personal data. It only contacts ipwho.is to look up the location of your current exit IP — when you click "Use my IP location", and automatically (at most every 10 minutes) while a proxy is active, to suggest matching your location to it. While a proxy is active, Nomada also stops WebRTC from leaking your real IP.
 
 Open the popup, choose a city, and you're there.
 ```
@@ -101,9 +101,9 @@ Nomada lets users change their browser's reported geolocation, timezone, locale 
 |---|---|
 | `proxy` | Route the user's traffic through a proxy profile they configure. |
 | `storage` | Save the user's location, locale and proxy profiles locally. |
-| `debugger` | Override geolocation, timezone and locale via the DevTools Protocol (the only API able to set these per-tab). |
-| `scripting` | Run a small fetch in the active tab to detect the current outgoing IP's location through the proxy. |
-| `tabs` | Apply geolocation overrides to the active tab and re-apply on navigation. |
+| `debugger` | Override geolocation, timezone, locale and browser language via the DevTools Protocol (the only API able to set these per-tab). |
+| `scripting` | Run a small fetch (isolated world) in the active tab to detect the current outgoing IP's location through the proxy. |
+| `privacy` | While a proxy is active, set WebRTC to `disable_non_proxied_udp` so it can't reveal the real IP. |
 | `webNavigation` | Re-apply the location override when the user navigates to a new page. |
 | `webRequest` + `webRequestAuthProvider` | Supply credentials for authenticated proxy profiles. |
 | `host_permissions: <all_urls>` | Location and proxy settings must apply to every site the user visits. |

@@ -1,18 +1,16 @@
 import type { SyncSuggestion, IpLocation } from '../types';
-import { COUNTRY_TO_LOCATION } from '../lib/country-locales';
+import { COUNTRY_TO_LOCATION, localeForCountry } from '../lib/country-locales';
 import { findLocationByKey } from '../lib/locations';
-import { localeForCountry } from '../lib/country-locales';
 
-// ipwho.is: free, HTTPS, no API key. (ip-api.com only allows HTTPS on paid
-// plans and returns 403 otherwise.)
+// ipwho.is: free, HTTPS, no API key, CORS-enabled. (ip-api.com only allows
+// HTTPS on paid plans and returns 403 otherwise.)
 const IP_API_BASE = 'https://ipwho.is/';
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const FETCH_TIMEOUT_MS = 5000;
 
 /** Raw ipwho.is response (subset we use). */
 interface IpWhoResponse {
   success?: boolean;
-  message?: string;
-  ip?: string;
   country?: string;
   country_code?: string;
   city?: string;
@@ -23,7 +21,6 @@ interface IpWhoResponse {
 
 /** Provider-agnostic, normalized IP info used by the rest of this module. */
 interface IpInfo {
-  ip?: string;
   country?: string;
   countryCode?: string;
   city?: string;
@@ -32,10 +29,9 @@ interface IpInfo {
   timezone?: string;
 }
 
-function normalize(raw: IpWhoResponse): IpInfo | null {
-  if (!raw.success) return null;
+function normalize(raw: IpWhoResponse | null | undefined): IpInfo | null {
+  if (!raw?.success) return null;
   return {
-    ip: raw.ip,
     country: raw.country,
     countryCode: raw.country_code,
     city: raw.city,
@@ -45,42 +41,35 @@ function normalize(raw: IpWhoResponse): IpInfo | null {
   };
 }
 
-interface IpApiCache {
-  data: IpInfo;
-  fetchedAt: number;
+let ipCache: { data: IpInfo; fetchedAt: number } | null = null;
+
+function cacheAndReturn(info: IpInfo | null): IpInfo | null {
+  if (info) ipCache = { data: info, fetchedAt: Date.now() };
+  return info;
 }
 
-let ipCache: IpApiCache | null = null;
+function lookupUrl(): string {
+  // Cache-buster so no HTTP cache serves an answer from before the route changed.
+  return `${IP_API_BASE}?_=${Date.now()}`;
+}
 
+/** Lookup from the service worker. Used for the background sync suggestion. */
 async function fetchIpApi(): Promise<IpInfo | null> {
-  if (ipCache && Date.now() - ipCache.fetchedAt < CACHE_TTL_MS) {
-    return ipCache.data;
-  }
+  if (ipCache && Date.now() - ipCache.fetchedAt < CACHE_TTL_MS) return ipCache.data;
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    // Cache-buster + no-store so neither Chrome's HTTP cache nor a CDN serves a
-    // stale answer captured before the proxy was active.
-    const url = `${IP_API_BASE}?_=${Date.now()}`;
-    const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
-    clearTimeout(timeout);
-    const info = normalize(await res.json() as IpWhoResponse);
-    console.log('[wooPortal] ipwho (sw) resolved IP:', info?.ip, '| country:', info?.countryCode, '| city:', info?.city);
-    if (info) {
-      ipCache = { data: info, fetchedAt: Date.now() };
-      return info;
-    }
-  } catch (e) {
-    console.error('[wooPortal] ipwho fetch failed:', e);
+    const res = await fetch(lookupUrl(), { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), cache: 'no-store' });
+    return cacheAndReturn(normalize(await res.json() as IpWhoResponse));
+  } catch {
+    return null; // offline, timeout or blocked — the caller treats it as "unknown"
   }
-  return null;
 }
 
 /**
- * Fetch from inside the active tab's page context. The tab's network traffic is
- * routed through the extension's proxy (and its auth), so this sees the proxy's
- * IP — unlike a fetch from the service worker, which bypasses it.
- * Returns null if there's no scriptable tab (e.g. chrome:// page).
+ * Lookup from inside the active tab, so it leaves through exactly the same
+ * route (proxy + proxy auth) as the pages the user is protecting. It runs in
+ * the extension's isolated world: page scripts can't intercept or fake the
+ * result, can't observe the request, and the page's CSP doesn't apply.
+ * Returns null if there's no scriptable tab (e.g. a chrome:// page).
  */
 async function fetchIpApiViaTab(): Promise<IpInfo | null> {
   let tab: chrome.tabs.Tab | undefined;
@@ -89,65 +78,42 @@ async function fetchIpApiViaTab(): Promise<IpInfo | null> {
   } catch {
     return null;
   }
-  if (!tab?.id || !tab.url || /^(chrome|edge|about|chrome-extension):/i.test(tab.url)) {
-    return null;
-  }
+  if (tab?.id === undefined || !tab.url || !/^https?:/i.test(tab.url)) return null;
   try {
     const [injection] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      world: 'MAIN',
-      func: async (apiUrl: string) => {
+      func: async (apiUrl: string, timeoutMs: number) => {
         try {
-          const r = await fetch(apiUrl, { cache: 'no-store' });
+          const r = await fetch(apiUrl, { cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
           return await r.json();
         } catch {
           return null;
         }
       },
-      args: [`${IP_API_BASE}?_=${Date.now()}`],
+      args: [lookupUrl(), FETCH_TIMEOUT_MS],
     });
-    const info = injection?.result ? normalize(injection.result as IpWhoResponse) : null;
-    if (info) {
-      console.log('[wooPortal] ipwho (via tab) resolved IP:', info.ip, '| country:', info.countryCode, '| city:', info.city);
-      ipCache = { data: info, fetchedAt: Date.now() };
-      return info;
-    }
-  } catch (e) {
-    console.error('[wooPortal] ipwho via tab failed:', e);
+    return cacheAndReturn(normalize(injection?.result as IpWhoResponse | null));
+  } catch {
+    return null;
   }
-  return null;
 }
 
-export function buildSyncPairKey(proxyId: string, countryCode: string): string {
-  return `${proxyId}:${countryCode}`;
-}
-
+/** Should we offer to move the location to the proxy's country? */
 export function shouldSuggest(
   detectedCountry: string,
-  currentLocationKey: string | undefined,
+  currentCountry: string | undefined,
   dismissed: string[],
 ): boolean {
-  if (!currentLocationKey) return false;
-
-  // Find location matching detected country
-  const suggestedKey = COUNTRY_TO_LOCATION[detectedCountry.toUpperCase()];
-  if (!suggestedKey) return false;
-
-  // Already on matching location
-  const currentLoc = findLocationByKey(currentLocationKey);
-  if (currentLoc?.countryCode.toUpperCase() === detectedCountry.toUpperCase()) return false;
-
-  // Already dismissed this country this session
-  const dismissedCountries = dismissed.map(d => d.split(':')[1]).filter(Boolean);
-  if (dismissedCountries.includes(detectedCountry.toUpperCase())) return false;
-
-  return true;
+  if (!currentCountry) return false;
+  const cc = detectedCountry.toUpperCase();
+  if (!COUNTRY_TO_LOCATION[cc]) return false;
+  if (currentCountry.toUpperCase() === cc) return false;
+  return !dismissed.includes(cc);
 }
 
 export function parseSyncSuggestion(countryCode: string): SyncSuggestion | null {
   const key = COUNTRY_TO_LOCATION[countryCode.toUpperCase()];
-  if (!key) return null;
-  const loc = findLocationByKey(key);
+  const loc = key ? findLocationByKey(key) : undefined;
   if (!loc) return null;
   return {
     countryCode: countryCode.toUpperCase(),
@@ -161,24 +127,22 @@ export function parseSyncSuggestion(countryCode: string): SyncSuggestion | null 
 }
 
 export async function detectProxyCountry(): Promise<string | null> {
-  const data = await fetchIpApi();
-  return data?.countryCode ?? null;
+  return (await fetchIpApi())?.countryCode ?? null;
 }
 
-/** Full geolocation of the current outgoing IP (proxy IP if proxy is active). */
+/** Full geolocation of the current outgoing IP (the proxy's exit IP when a proxy is active). */
 export async function detectIpLocation(): Promise<IpLocation | null> {
-  // Prefer the in-tab fetch (goes through the proxy); fall back to the
-  // service-worker fetch if there's no scriptable tab available.
   const data = (await fetchIpApiViaTab()) ?? (await fetchIpApi());
   if (!data || data.lat === undefined || data.lon === undefined) return null;
+  const countryCode = (data.countryCode || '').toUpperCase();
   return {
     city: data.city || data.country || 'Unknown',
     country: data.country || '',
-    countryCode: data.countryCode || '',
+    countryCode,
     lat: data.lat,
     lon: data.lon,
     timezone: data.timezone || 'UTC',
-    locale: localeForCountry(data.countryCode || ''),
+    locale: localeForCountry(countryCode, navigator.language.split('-')[0]),
   };
 }
 

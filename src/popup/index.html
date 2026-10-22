@@ -55,7 +55,7 @@
       <svg class="search-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
         <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/>
       </svg>
-      <input class="search-input" id="citySearch" placeholder="Search city..." autocomplete="off">
+      <input class="search-input" id="citySearch" placeholder="Search city or country…" autocomplete="off">
     </div>
     <div class="city-grid" id="cityGrid"></div>
   </section>
@@ -77,18 +77,17 @@
       Proxy profile
       <span class="section-link" id="manageProxyBtn">Manage</span>
     </div>
-    <div class="proxy-card" id="proxyCard" style="display:none;">
+    <div class="proxy-card proxy-selected" id="proxyCard" style="display:none;">
       <div class="proxy-color" id="proxyColorDot"></div>
       <div class="proxy-info">
         <div class="proxy-name" id="proxyName"></div>
         <div class="proxy-meta" id="proxyMeta"></div>
       </div>
       <span class="active-badge" id="proxyBadge"></span>
+      <button class="btn-sm secondary btn-disconnect" id="proxyDisconnect" title="Stop routing traffic through this proxy">Disconnect</button>
     </div>
-    <div class="empty-proxy" id="emptyProxy">
-      No proxy configured
-      <span class="section-link" id="addProxyBtn">+ Add</span>
-    </div>
+    <div class="proxy-list" id="proxyList"></div>
+    <div class="proxy-error" id="proxyError" role="alert" hidden></div>
   </section>
 
   <footer class="popup-footer">

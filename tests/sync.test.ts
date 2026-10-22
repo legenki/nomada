@@ -1,28 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { buildSyncPairKey, shouldSuggest, parseSyncSuggestion } from '../src/background/sync';
-
-describe('buildSyncPairKey', () => {
-  it('creates deterministic key from proxy id and country code', () => {
-    expect(buildSyncPairKey('proxy-1', 'RU')).toBe('proxy-1:RU');
-  });
-});
+import { shouldSuggest, parseSyncSuggestion } from '../src/background/sync';
 
 describe('shouldSuggest', () => {
-  it('returns true when proxy country differs from current geo location country', () => {
-    expect(shouldSuggest('RU', 'newYork', ['proxy-1:JP'])).toBe(true);
+  it('suggests when the proxy country differs from the current location', () => {
+    expect(shouldSuggest('RU', 'US', ['JP'])).toBe(true);
   });
 
-  it('returns false when proxy country matches current geo location', () => {
-    // moscow has countryCode RU
-    expect(shouldSuggest('RU', 'moscow', [])).toBe(false);
+  it('does not suggest when the countries already match', () => {
+    expect(shouldSuggest('ru', 'RU', [])).toBe(false);
   });
 
-  it('returns false when pair already dismissed', () => {
-    expect(shouldSuggest('JP', 'newYork', ['proxy-1:JP'])).toBe(false);
+  it('does not suggest a country the user dismissed', () => {
+    expect(shouldSuggest('JP', 'US', ['JP'])).toBe(false);
   });
 
-  it('returns false when no geo location is set', () => {
+  it('does not suggest when no location is set', () => {
     expect(shouldSuggest('RU', undefined, [])).toBe(false);
+  });
+
+  it('does not suggest a country without a preset city', () => {
+    expect(shouldSuggest('ZZ', 'US', [])).toBe(false);
   });
 });
 

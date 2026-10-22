@@ -40,19 +40,22 @@ export interface GeoSettings {
   locationKey?: string;
   /** Display name when the location isn't a preset (e.g. resolved from IP). */
   cityName?: string;
+  /** ISO 3166-1 alpha-2 country of the location (drives the toolbar badge). */
+  countryCode?: string;
 }
 
 export interface WooPortalData {
   version: 3;
-  /** Master switch: when false the whole extension is dormant (no geo, proxy=system). */
+  /** Master switch: when false the whole extension is dormant (no geo, proxy released). */
   enabled: boolean;
-  mode: 'direct' | 'system' | 'profile';
+  /** 'profile' routes traffic through activeProfileId; 'system' leaves the proxy untouched. */
+  mode: 'system' | 'profile';
   profiles: ProxyProfile[];
+  /** Selected profile. Kept while the master switch is OFF so ON restores it. */
   activeProfileId?: string;
-  /** Remembers the chosen profile while the extension is OFF, so ON can restore it. */
-  lastProfileId?: string;
   geo: GeoSettings;
   syncEnabled: boolean;
+  /** Country codes the user declined to sync to (capped, most recent last). */
   syncDismissed: string[];
   settings: {
     notifyChange: boolean;
@@ -93,9 +96,14 @@ export type BgMessage =
   | { type: 'ACTIVATE_PROFILE'; payload: { id: string } }
   | { type: 'DEACTIVATE_PROFILE' }
   | { type: 'SET_GEO'; payload: GeoSettings }
-  | { type: 'CLEAR_GEO' }
-  | { type: 'DISMISS_SYNC_SUGGESTION'; payload: { pair: string } }
+  | { type: 'PROFILES_CHANGED' }
+  | { type: 'DISMISS_SYNC_SUGGESTION'; payload: { countryCode: string } }
   | { type: 'ACCEPT_SYNC_SUGGESTION'; payload: SyncSuggestion };
+
+export interface ActionResult {
+  success: boolean;
+  error?: string;
+}
 
 export interface BgState {
   enabled: boolean;
@@ -103,5 +111,4 @@ export interface BgState {
   profiles: ProxyProfile[];
   activeProfile: ProxyProfile | null;
   geo: GeoSettings;
-  suggestion: SyncSuggestion | null;
 }

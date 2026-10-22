@@ -4,7 +4,8 @@ import { resolve } from 'path';
 export default defineConfig({
   build: {
     outDir: 'dist',
-    emptyOutDir: false,
+    // First of the three builds: start from a clean dist so removed files don't ship.
+    emptyOutDir: true,
     lib: {
       entry: resolve(__dirname, 'src/background/index.ts'),
       formats: ['es'],

@@ -1,10 +1,12 @@
 import { Globe } from './globe';
 import { renderCityGrid, renderProxySection, renderSuggestionBanner, renderStatusPills } from './ui';
-import type { BgMessage, BgState, SyncSuggestion } from '../types';
+import type { ProxyElements } from './ui';
+import type { ActionResult, BgMessage, BgState, SyncSuggestion } from '../types';
 import { findLocationByKey } from '../lib/locations';
 import type { Location } from '../lib/locations';
+import { hasGeoTarget } from '../lib/state';
 
-function sendMsg(msg: BgMessage, retries = 3): Promise<unknown> {
+function sendMsg<T = unknown>(msg: BgMessage, retries = 3): Promise<T> {
   return new Promise((resolve, reject) => {
     const attempt = (n: number) => {
       chrome.runtime.sendMessage(msg, (response) => {
@@ -13,7 +15,7 @@ function sendMsg(msg: BgMessage, retries = 3): Promise<unknown> {
           else reject(new Error(chrome.runtime.lastError.message));
           return;
         }
-        resolve(response);
+        resolve(response as T);
       });
     };
     attempt(retries);
@@ -27,6 +29,7 @@ const locDot         = $<HTMLElement>('#locDot');
 const masterToggle   = $<HTMLInputElement>('#masterToggle');
 const locationName   = $<HTMLElement>('#locationName');
 const locationCoords = $<HTMLElement>('#locationCoords');
+const locationClock  = $<HTMLElement>('#locationClock');
 const clockTime      = $<HTMLElement>('#clockTime');
 const clockLocale    = $<HTMLElement>('#clockLocale');
 const geoActivePill  = $<HTMLElement>('#geoActivePill');
@@ -34,16 +37,20 @@ const ipSyncBtn      = $<HTMLButtonElement>('#ipSyncBtn');
 const citySearch     = $<HTMLInputElement>('#citySearch');
 const cityGrid       = $<HTMLElement>('#cityGrid');
 const suggestionBanner = $<HTMLElement>('#suggestionBanner');
-const proxyCard      = $<HTMLElement>('#proxyCard');
-const proxyName      = $<HTMLElement>('#proxyName');
-const proxyMeta      = $<HTMLElement>('#proxyMeta');
-const proxyBadge     = $<HTMLElement>('#proxyBadge');
-const proxyColorDot  = $<HTMLElement>('#proxyColorDot');
-const emptyProxy     = $<HTMLElement>('#emptyProxy');
+const proxyError     = $<HTMLElement>('#proxyError');
 const versionText    = $<HTMLElement>('#versionText');
+const proxyEls: ProxyElements = {
+  card: $<HTMLElement>('#proxyCard'),
+  name: $<HTMLElement>('#proxyName'),
+  meta: $<HTMLElement>('#proxyMeta'),
+  badge: $<HTMLElement>('#proxyBadge'),
+  colorDot: $<HTMLElement>('#proxyColorDot'),
+  disconnect: $<HTMLButtonElement>('#proxyDisconnect'),
+  list: $<HTMLElement>('#proxyList'),
+};
 
-let globe: Globe;
-let currentState: BgState;
+const globe = new Globe(globeCanvas, 200);
+let currentState: BgState | null = null;
 let activeSuggestion: SyncSuggestion | null = null;
 let clockTimezone: string | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
@@ -59,6 +66,7 @@ function showLocation(name: string, lat: number, lon: number, locale: string, ti
   const lonStr = `${Math.abs(lon).toFixed(2)}° ${lon >= 0 ? 'E' : 'W'}`;
   locationCoords.textContent = `${latStr} · ${lonStr}`;
   clockLocale.textContent = locale;
+  locationClock.hidden = false;
   startClock(timezone);
 }
 
@@ -87,12 +95,16 @@ function clearClock(): void {
   clockTimezone = null;
   clockTime.textContent = '—';
   clockLocale.textContent = '—';
+  locationClock.hidden = true;
 }
 
-function applyState(state: BgState | null | undefined): void {
-  if (!state) return;
+function showProxyError(message: string | null): void {
+  proxyError.textContent = message ?? '';
+  proxyError.hidden = !message;
+}
+
+function applyState(state: BgState): void {
   currentState = state;
-  activeSuggestion = state.suggestion;
 
   masterToggle.checked = state.enabled;
   document.body.classList.toggle('is-disabled', !state.enabled);
@@ -102,34 +114,46 @@ function applyState(state: BgState | null | undefined): void {
   if (loc) {
     globe.rotateTo(loc.lon, loc.lat);
     updateLocationDisplay(loc);
-  } else if (g.lat !== undefined && g.lon !== undefined && g.cityName) {
+  } else if (hasGeoTarget(g) && g.lat !== undefined && g.lon !== undefined) {
     // Location resolved from IP (not a preset city)
     globe.rotateTo(g.lon, g.lat);
-    showLocation(g.cityName, g.lat, g.lon, g.locale ?? '', g.timezone ?? 'UTC');
+    showLocation(g.cityName ?? 'Custom location', g.lat, g.lon, g.locale ?? '', g.timezone ?? 'UTC');
   } else {
-    locationName.textContent = '—';
-    locationCoords.textContent = '—';
+    locationName.textContent = 'Choose a location';
+    locationCoords.textContent = 'Pick a city below or use your IP';
     clearClock();
   }
 
   renderStatusPills(geoActivePill, state);
-  renderCityGrid(cityGrid, citySearch.value, state.geo.locationKey, handleCitySelect);
-  renderProxySection(proxyCard, proxyName, proxyMeta, proxyBadge, proxyColorDot, emptyProxy, state,
-    handleActivateProfile, handleDeactivateProfile);
-  wireAddProxyBtn();
-  renderSuggestionBanner(suggestionBanner, activeSuggestion, handleAcceptSync, handleDismissSync);
+  renderCityGrid(cityGrid, citySearch.value, g.locationKey, handleCitySelect);
+  renderProxySection(proxyEls, state, {
+    onActivate: handleActivateProfile,
+    onDeactivate: handleDeactivateProfile,
+    onAdd: () => chrome.runtime.openOptionsPage(),
+  });
 }
 
 async function refresh(): Promise<void> {
-  const s = await sendMsg({ type: 'GET_STATE' }) as BgState;
-  applyState(s);
+  applyState(await sendMsg<BgState>({ type: 'GET_STATE' }));
+}
+
+/** Run a state-changing action, refresh the UI and surface any proxy error. */
+async function act(msg: BgMessage): Promise<ActionResult | undefined> {
+  try {
+    const result = await sendMsg<ActionResult>(msg);
+    showProxyError(result && !result.success ? result.error ?? 'Something went wrong' : null);
+    await refresh();
+    return result;
+  } catch (e) {
+    showProxyError((e as Error).message);
+    return undefined;
+  }
 }
 
 async function handleMasterToggle(): Promise<void> {
   const enable = masterToggle.checked;
   document.body.classList.toggle('is-disabled', !enable);
-  await sendMsg({ type: enable ? 'ENABLE_ALL' : 'DISABLE_ALL' });
-  await refresh();
+  await act({ type: enable ? 'ENABLE_ALL' : 'DISABLE_ALL' });
   if (enable) void checkSyncInBackground();
 }
 
@@ -137,7 +161,8 @@ async function handleCitySelect(loc: Location): Promise<void> {
   globe.rotateTo(loc.lon, loc.lat);
   updateLocationDisplay(loc);
   renderCityGrid(cityGrid, citySearch.value, loc.key, handleCitySelect);
-  await sendMsg({
+  // Picking a place also turns the extension ON (handled by the background).
+  await act({
     type: 'SET_GEO',
     payload: {
       enabled: true,
@@ -146,82 +171,64 @@ async function handleCitySelect(loc: Location): Promise<void> {
       lat: loc.lat,
       lon: loc.lon,
       locationKey: loc.key,
+      countryCode: loc.countryCode,
     },
   });
-  // Selecting a city implies the extension should be ON.
-  if (!masterToggle.checked) {
-    masterToggle.checked = true;
-    await sendMsg({ type: 'ENABLE_ALL' });
-  }
-  await refresh();
 }
 
 async function handleIpSync(): Promise<void> {
   const label = ipSyncBtn.querySelector<HTMLElement>('.ip-sync-label')!;
   const original = label.textContent;
+  const flash = (text: string) => {
+    label.textContent = text;
+    setTimeout(() => { label.textContent = original; }, 2000);
+  };
   ipSyncBtn.disabled = true;
   ipSyncBtn.classList.add('is-loading');
   label.textContent = 'Detecting…';
   try {
-    const r = await sendMsg({ type: 'SYNC_TO_IP' }) as { success: boolean; error?: string; cityName?: string };
-    if (r?.success) {
-      if (!masterToggle.checked) masterToggle.checked = true;
-      await refresh();
-    } else {
-      label.textContent = r?.error ?? 'Failed';
-      setTimeout(() => { label.textContent = original; }, 2000);
-    }
+    const r = await sendMsg<ActionResult>({ type: 'SYNC_TO_IP' });
+    label.textContent = original;
+    if (r?.success) await refresh();
+    else flash(r?.error ?? 'Failed');
   } catch {
-    label.textContent = 'Network error';
-    setTimeout(() => { label.textContent = original; }, 2000);
+    flash('Network error');
   } finally {
     ipSyncBtn.disabled = false;
     ipSyncBtn.classList.remove('is-loading');
-    if (label.textContent === 'Detecting…') label.textContent = original;
   }
 }
 
 async function handleAcceptSync(): Promise<void> {
   if (!activeSuggestion) return;
-  await sendMsg({ type: 'ACCEPT_SYNC_SUGGESTION', payload: activeSuggestion });
-  const loc = findLocationByKey(activeSuggestion.locationKey);
-  if (loc) { globe.rotateTo(loc.lon, loc.lat); updateLocationDisplay(loc); }
+  const suggestion = activeSuggestion;
   activeSuggestion = null;
   renderSuggestionBanner(suggestionBanner, null, handleAcceptSync, handleDismissSync);
-  await refresh();
+  await act({ type: 'ACCEPT_SYNC_SUGGESTION', payload: suggestion });
 }
 
 async function handleDismissSync(): Promise<void> {
   if (!activeSuggestion) return;
-  const pair = `${currentState.activeProfile?.id ?? 'unknown'}:${activeSuggestion.countryCode}`;
-  await sendMsg({ type: 'DISMISS_SYNC_SUGGESTION', payload: { pair } });
+  const { countryCode } = activeSuggestion;
   activeSuggestion = null;
   renderSuggestionBanner(suggestionBanner, null, handleAcceptSync, handleDismissSync);
+  await sendMsg({ type: 'DISMISS_SYNC_SUGGESTION', payload: { countryCode } }).catch(() => {});
 }
 
 async function handleActivateProfile(id: string): Promise<void> {
-  await sendMsg({ type: 'ACTIVATE_PROFILE', payload: { id } });
-  await refresh();
-  void checkSyncInBackground();
+  const r = await act({ type: 'ACTIVATE_PROFILE', payload: { id } });
+  if (r?.success) void checkSyncInBackground();
 }
 
 async function handleDeactivateProfile(): Promise<void> {
-  await sendMsg({ type: 'DEACTIVATE_PROFILE' });
-  await refresh();
-}
-
-function wireAddProxyBtn(): void {
-  const btn = document.getElementById('addProxyBtn');
-  if (btn) btn.addEventListener('click', () => chrome.runtime.openOptionsPage());
+  await act({ type: 'DEACTIVATE_PROFILE' });
 }
 
 async function checkSyncInBackground(): Promise<void> {
   try {
-    const r = await sendMsg({ type: 'CHECK_SYNC' }) as { suggestion: SyncSuggestion | null };
-    if (r?.suggestion) {
-      activeSuggestion = r.suggestion;
-      renderSuggestionBanner(suggestionBanner, activeSuggestion, handleAcceptSync, handleDismissSync);
-    }
+    const r = await sendMsg<{ suggestion: SyncSuggestion | null }>({ type: 'CHECK_SYNC' });
+    activeSuggestion = r?.suggestion ?? null;
+    renderSuggestionBanner(suggestionBanner, activeSuggestion, handleAcceptSync, handleDismissSync);
   } catch {
     // Sync check failed (network) — non-critical, ignore
   }
@@ -230,31 +237,33 @@ async function checkSyncInBackground(): Promise<void> {
 document.addEventListener('DOMContentLoaded', async () => {
   versionText.textContent = `v${chrome.runtime.getManifest().version}`;
 
-  globe = new Globe(globeCanvas, 200);
+  // Wire controls first, so a failed load below can't leave a dead popup.
+  masterToggle.addEventListener('change', handleMasterToggle);
+  ipSyncBtn.addEventListener('click', handleIpSync);
+  citySearch.addEventListener('input', () => {
+    renderCityGrid(cityGrid, citySearch.value, currentState?.geo.locationKey, handleCitySelect);
+  });
+  $<HTMLElement>('#settingsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
+  $<HTMLElement>('#manageProxyBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => globe.draw());
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refresh().catch(() => {});
+  });
 
   globe.onDotPosition = (x, y) => {
     locDot.style.left = `${x}px`;
     locDot.style.top = `${y}px`;
   };
 
-  await globe.loadData(chrome.runtime.getURL('land-110m.json'));
-
-  await refresh();
-  if (currentState?.enabled) void checkSyncInBackground();
-
-  masterToggle.addEventListener('change', handleMasterToggle);
-  ipSyncBtn.addEventListener('click', handleIpSync);
-
-  citySearch.addEventListener('input', () => {
-    renderCityGrid(cityGrid, citySearch.value, currentState.geo.locationKey, handleCitySelect);
-  });
-
-  $<HTMLElement>('#settingsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
-  $<HTMLElement>('#manageProxyBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
-
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => globe.draw());
-
-  document.addEventListener('visibilitychange', async () => {
-    if (!document.hidden) await refresh();
-  });
+  // The map is decoration: load it alongside the state, and never let it block the UI.
+  const [, stateResult] = await Promise.allSettled([
+    globe.loadData(chrome.runtime.getURL('land-110m.json')),
+    refresh(),
+  ]);
+  if (stateResult.status === 'rejected') {
+    locationName.textContent = 'Nomada is starting…';
+    locationCoords.textContent = 'Close and reopen the popup in a moment';
+    return;
+  }
+  if (currentState?.activeProfile && currentState.enabled) void checkSyncInBackground();
 });

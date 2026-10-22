@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
-import { copyFileSync, mkdirSync } from 'fs';
+import { copyFileSync, renameSync, rmSync } from 'fs';
 
 export default defineConfig({
   build: {
@@ -11,7 +11,6 @@ export default defineConfig({
       output: {
         entryFileNames: '[name].js',
         assetFileNames: (info) => info.name === 'index.css' ? 'popup.css' : '[name].[ext]',
-        // Keep the HTML flat in dist (not nested under src/popup/)
       },
     },
   },
@@ -19,24 +18,10 @@ export default defineConfig({
     {
       name: 'flatten-popup-html',
       closeBundle() {
-        // Move dist/src/popup/index.html → dist/popup.html
-        try {
-          copyFileSync(
-            resolve(__dirname, 'dist/src/popup/index.html'),
-            resolve(__dirname, 'dist/popup.html'),
-          );
-        } catch {
-          // Already at dist/popup.html (rerun), ignore
-        }
-      },
-    },
-    {
-      name: 'copy-public-assets',
-      closeBundle() {
-        // Copy manifest, icons and land-110m.json into dist
-        try {
-          copyFileSync(resolve(__dirname, 'manifest.json'), resolve(__dirname, 'dist/manifest.json'));
-        } catch { /* */ }
+        // Vite mirrors the source path (dist/src/popup/index.html); the manifest wants dist/popup.html.
+        renameSync(resolve(__dirname, 'dist/src/popup/index.html'), resolve(__dirname, 'dist/popup.html'));
+        rmSync(resolve(__dirname, 'dist/src/popup'), { recursive: true, force: true });
+        copyFileSync(resolve(__dirname, 'manifest.json'), resolve(__dirname, 'dist/manifest.json'));
       },
     },
   ],

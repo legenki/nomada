@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
-import { copyFileSync } from 'fs';
+import { renameSync, rmSync } from 'fs';
 
 export default defineConfig({
   build: {
@@ -18,14 +18,9 @@ export default defineConfig({
     {
       name: 'flatten-options-html',
       closeBundle() {
-        try {
-          copyFileSync(
-            resolve(__dirname, 'dist/src/options/index.html'),
-            resolve(__dirname, 'dist/options.html'),
-          );
-        } catch {
-          // Already at dist/options.html, ignore
-        }
+        // Vite mirrors the source path (dist/src/options/index.html); the manifest wants dist/options.html.
+        renameSync(resolve(__dirname, 'dist/src/options/index.html'), resolve(__dirname, 'dist/options.html'));
+        rmSync(resolve(__dirname, 'dist/src'), { recursive: true, force: true });
       },
     },
   ],

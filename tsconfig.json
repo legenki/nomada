@@ -7,8 +7,8 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "lib": ["ES2022", "DOM"],
-    "outDir": "./dist",
-    "rootDir": "./src",
+    "noEmit": true,
+    "skipLibCheck": true,
     "types": ["chrome"]
   },
   "include": ["src", "tests"]

@@ -1,6 +1,6 @@
 ## AI Coding Assistants
 
-This file provides context and rules for AI coding agents working on the **wooPortal** project (a Chrome Extension built with Vite and TypeScript).
+This file provides context and rules for AI coding agents working on the **Nomada** project (formerly wooPortal) (a Chrome Extension built with Vite and TypeScript).
 
 ### Core Principle
 Any AI agent working on this codebase **must** deeply understand the full project before answering questions or making changes. Do not rely on assumptions or partial knowledge. Explore the actual files and architecture.

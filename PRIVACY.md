@@ -1,6 +1,6 @@
 # Privacy Policy — Nomada
 
-_Last updated: 2026-06-28_
+_Last updated: 2026-10-22_
 
 Nomada ("the extension") is a browser extension that lets you change your
 browser's reported geolocation, timezone, locale, and proxy settings. This
@@ -29,15 +29,20 @@ server, by your own browser, as part of normal proxy authentication.
 
 ## Network requests
 
-Nomada makes a network request only in one case:
+Nomada contacts one service, **ipwho.is** (`https://ipwho.is`), to look up the
+approximate location (country, city, coordinates, timezone) of the IP address
+your traffic currently exits from — your proxy's IP when a proxy is active. It
+does so in two cases:
 
-- **"Use my IP location"** — when you click this button, the extension requests
-  your current outgoing IP's approximate location from **ipwho.is**
-  (`https://ipwho.is`). This request returns the country, city, coordinates, and
-  timezone of the IP your traffic is currently exiting from (which is your proxy's
-  IP when a proxy is active). Nomada does not send any personal information in
-  this request beyond what is inherent to making an HTTP request (your IP, as
-  seen by ipwho.is). See ipwho.is's own privacy terms for how they handle it.
+- **"Use my IP location"** — when you click this button.
+- **Proxy sync suggestions** — automatically when you open the popup while a
+  proxy profile is active, at most once every 10 minutes, to offer matching your
+  location to the proxy's country. You can dismiss a suggestion; the countries
+  you dismissed are stored locally.
+
+Nomada sends nothing in these requests beyond what any HTTP request carries
+(your exit IP, as seen by ipwho.is). See ipwho.is's own privacy terms for how
+they handle it.
 
 No other analytics, telemetry, or tracking requests are made by the extension.
 
@@ -47,13 +52,15 @@ Nomada requests browser permissions only to provide its features:
 
 - **proxy** — route your traffic through a proxy you configure
 - **storage** — save your settings locally
-- **debugger** — override geolocation, timezone, and locale (the only browser
-  API able to do this per tab)
-- **scripting / tabs** — apply location overrides to your active tab and detect
-  your outgoing IP location through the proxy
+- **debugger** — override geolocation, timezone, locale and the browser
+  language (the only browser API able to do this per tab)
+- **scripting** — run the IP lookup inside your active tab, so it leaves through
+  the same proxy as your pages (in an isolated context pages can't see)
+- **privacy** — while a proxy is active, stop WebRTC from revealing your real
+  IP outside the proxy
 - **webNavigation** — re-apply your location override when you navigate
-- **webRequest / webRequestAuthProvider** — supply credentials to authenticated
-  proxies
+- **webRequest / webRequestAuthProvider** — supply credentials to the
+  authenticated proxy you configured
 - **host access to all sites** — your location and proxy settings must apply to
   every site you visit
 
