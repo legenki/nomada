@@ -1,198 +1,334 @@
-import { geoOrthographic, geoPath, geoGraticule, type GeoPath, type GeoProjection } from 'd3-geo';
+import { geoOrthographic, geoPath, geoEquirectangular, geoInterpolate, geoDistance, type GeoProjection } from 'd3-geo';
 import { feature } from 'topojson-client';
 import type { GeoPermissibleObjects } from 'd3-geo';
 
-interface GlobeColors {
-  ocean1: string; ocean2: string;
-  land: string; land2: string;
-  gratStroke: string;
-  fog1: string; fog2: string;
-  atmo1: string; atmo2: string;
-  specular: string;
-  border: string;
+export interface LatLon { lat: number; lon: number }
+
+export interface GlobeScene {
+  real: LatLon | null;
+  proxy: LatLon | null;
+  /** Proxy route is live: draw the arc and the proxy marker as the focus. */
+  active: boolean;
+  /** Waiting for the proxy to answer: the arc pulses. */
+  connecting: boolean;
 }
 
-function lightColors(): GlobeColors {
-  // Desaturated, near-monochrome blue-grey. R/G/B kept close together so the
-  // hue reads as a soft slate rather than vivid blue.
-  return {
-    ocean1: '#e3e9ef', ocean2: '#ccd5de',
-    land: '#a3afb9', land2: '#929fab',
-    gratStroke: 'rgba(140,155,170,0.22)',
-    fog1: 'rgba(255,255,255,0)', fog2: 'rgba(255,255,255,0.60)',
-    atmo1: 'rgba(150,175,200,0)', atmo2: 'rgba(150,175,200,0.22)',
-    specular: 'rgba(255,255,255,0.10)',
-    border: 'rgba(165,180,195,0.45)',
-  };
+interface Palette {
+  dot: string; sphere: string; sphereEdge: string; accent: string; muted: string;
+  glow: string; glowFade: string; glowOn: string; glowOnFade: string;
 }
 
-function darkColors(): GlobeColors {
-  // Desaturated slate; channels close together for a monochrome feel.
-  return {
-    ocean1: '#1a2026', ocean2: '#11161b',
-    land: '#2c353d', land2: '#353f48',
-    gratStroke: 'rgba(90,105,120,0.28)',
-    fog1: 'rgba(13,17,23,0)', fog2: 'rgba(13,17,23,0.70)',
-    atmo1: 'rgba(120,145,170,0)', atmo2: 'rgba(120,145,170,0.18)',
-    specular: 'rgba(255,255,255,0.06)',
-    border: 'rgba(130,150,170,0.30)',
-  };
+/** Same colour with zero alpha. Canvas gradients to 'transparent' fade through black. */
+export function fade(color: string): string {
+  const m = color.match(/rgba?\(([^)]+)\)/);
+  if (m) {
+    const [r, g, b] = m[1].split(',').map(x => x.trim());
+    return `rgba(${r},${g},${b},0)`;
+  }
+  const clean = color.trim().replace(/^#/, '');
+  if (/^[0-9a-f]{3}$/i.test(clean)) {
+    const r = parseInt(clean[0] + clean[0], 16);
+    const g = parseInt(clean[1] + clean[1], 16);
+    const b = parseInt(clean[2] + clean[2], 16);
+    return `rgba(${r},${g},${b},0)`;
+  }
+  const hex6 = /^([0-9a-f]{6})/i.exec(clean);
+  if (hex6) {
+    const n = parseInt(hex6[1], 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},0)`;
+  }
+  return 'rgba(0,0,0,0)';
 }
+
+const DOT_STEP_DEG = 2.3;   // spacing of the land dot grid
+const FRAME_MS = 1000 / 40; // cap the loop; it's a popup, not a game
+const EASE_MS = 1100;
+
+/** Unit vector for a lon/lat in degrees. */
+function vec(lon: number, lat: number): [number, number, number] {
+  const l = lon * Math.PI / 180, p = lat * Math.PI / 180;
+  return [Math.cos(p) * Math.cos(l), Math.cos(p) * Math.sin(l), Math.sin(p)];
+}
+
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
 export class Globe {
-  private canvas: HTMLCanvasElement;
-  private ctx: CanvasRenderingContext2D;
-  private proj: GeoProjection;
-  private pathGen: GeoPath;
-  private graticule: GeoPermissibleObjects;
-  private land: GeoPermissibleObjects | null = null;
-  private rotation: [number, number, number] = [0, 0, 0];
-  private startRotation: [number, number, number] = [0, 0, 0];
-  private targetRotation: [number, number, number] = [0, 0, 0];
-  private animId: number | null = null;
-  private animStart: number | null = null;
-  private readonly ANIM_DURATION = 900; // ms
+  private readonly ctx: CanvasRenderingContext2D;
+  private readonly proj: GeoProjection;
+  private readonly size: number;
+  private readonly dpr: number;
+  private readonly r: number;
 
-  private readonly DPR: number;
-  private readonly W: number;
-  private readonly CX: number;
-  private readonly CY: number;
-  private readonly R: number;
+  /** Land dots: lon, lat and unit vector, precomputed once. */
+  private dots: { lon: number; lat: number; v: [number, number, number] }[] = [];
+  private palette: Palette;
+  private scene: GlobeScene = { real: null, proxy: null, active: false, connecting: false };
 
-  onDotPosition?: (x: number, y: number) => void;
+  // View rotation as [lambda, phi] (d3 rotate), eased toward a focus point.
+  private view: [number, number] = [0, -10];
+  private from: [number, number] = [0, -10];
+  private to: [number, number] = [0, -10];
+  private easeStart = 0;
+  private dragging: { x: number; y: number; view: [number, number] } | null = null;
+  private resumeAt = 0;
 
-  constructor(canvas: HTMLCanvasElement, displaySize: number = 200) {
-    this.canvas = canvas;
+  private raf: number | null = null;
+  private lastFrame = 0;
+
+  constructor(private readonly canvas: HTMLCanvasElement, size: number) {
     this.ctx = canvas.getContext('2d')!;
-    this.DPR = Math.min(window.devicePixelRatio || 2, 3);
-    this.W = displaySize * this.DPR;
-    this.CX = this.W / 2;
-    this.CY = this.W / 2;
-    this.R = this.CX * 0.92;
-
-    canvas.width = this.W;
-    canvas.height = this.W;
-
-    this.proj = geoOrthographic()
-      .scale(this.R)
-      .translate([this.CX, this.CY])
-      .rotate(this.rotation)
-      .clipAngle(90)
-      .precision(0.8);
-
-    this.pathGen = geoPath(this.proj, this.ctx);
-    this.graticule = geoGraticule().step([30, 30])();
+    this.size = size;
+    this.dpr = Math.min(window.devicePixelRatio || 1, 3);
+    canvas.width = canvas.height = size * this.dpr;
+    canvas.style.width = canvas.style.height = `${size}px`;
+    this.r = size * 0.38; // leaves room for the glow inside the canvas
+    this.proj = geoOrthographic().scale(this.r).translate([size / 2, size / 2]).clipAngle(90).precision(0.5);
+    this.palette = this.readPalette();
+    this.bindDrag();
   }
 
-  async loadData(topoUrl: string): Promise<void> {
-    const res = await fetch(topoUrl);
-    const world = await res.json();
-    this.land = feature(world, world.objects.land) as unknown as GeoPermissibleObjects;
-    this.draw();
-  }
+  /** Rasterise land once and keep the grid points that fall on it. */
+  async loadLand(url: string): Promise<void> {
+    const world = await (await fetch(url)).json();
+    const land = feature(world, world.objects.land) as unknown as GeoPermissibleObjects;
 
-  private colors(): GlobeColors {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? darkColors() : lightColors();
-  }
+    const W = 720, H = 360;
+    const off = document.createElement('canvas');
+    off.width = W; off.height = H;
+    const octx = off.getContext('2d', { willReadFrequently: true })!;
+    const eq = geoEquirectangular().scale(W / (2 * Math.PI)).translate([W / 2, H / 2]);
+    octx.beginPath();
+    geoPath(eq, octx)(land);
+    octx.fill();
+    const pixels = octx.getImageData(0, 0, W, H).data;
 
-  draw(): void {
-    if (!this.land) return;
-    const { ctx, CX, CY, R, proj, pathGen } = this;
-    const c = this.colors();
-
-    ctx.clearRect(0, 0, this.W, this.W);
-
-    // Ocean
-    const og = ctx.createRadialGradient(CX - R * 0.25, CY - R * 0.22, 0, CX, CY, R);
-    og.addColorStop(0, c.ocean1); og.addColorStop(1, c.ocean2);
-    ctx.beginPath(); ctx.arc(CX, CY, R, 0, Math.PI * 2);
-    ctx.fillStyle = og; ctx.fill();
-
-    // Graticule
-    ctx.beginPath(); pathGen(this.graticule);
-    ctx.strokeStyle = c.gratStroke; ctx.lineWidth = 0.8; ctx.stroke();
-
-    // Land
-    const lg = ctx.createRadialGradient(CX - R * 0.2, CY - R * 0.2, 0, CX, CY, R * 0.9);
-    lg.addColorStop(0, c.land); lg.addColorStop(1, c.land2);
-    ctx.beginPath(); pathGen(this.land);
-    ctx.fillStyle = lg; ctx.fill();
-    ctx.strokeStyle = c.specular; ctx.lineWidth = 0.7; ctx.stroke();
-
-    // Fog (sphere depth)
-    const fg = ctx.createRadialGradient(CX, CY, R * 0.55, CX, CY, R);
-    fg.addColorStop(0, c.fog1); fg.addColorStop(1, c.fog2);
-    ctx.beginPath(); ctx.arc(CX, CY, R, 0, Math.PI * 2);
-    ctx.fillStyle = fg; ctx.fill();
-
-    // Atmosphere
-    const ag = ctx.createRadialGradient(CX, CY, R * 0.88, CX, CY, R * 1.08);
-    ag.addColorStop(0, c.atmo2); ag.addColorStop(1, c.atmo1);
-    ctx.beginPath(); ctx.arc(CX, CY, R * 1.06, 0, Math.PI * 2);
-    ctx.fillStyle = ag; ctx.fill();
-
-    // Specular highlight
-    const sg = ctx.createRadialGradient(CX - R * 0.3, CY - R * 0.32, 0, CX - R * 0.1, CY - R * 0.1, R * 0.7);
-    sg.addColorStop(0, 'rgba(255,255,255,0.10)');
-    sg.addColorStop(0.5, 'rgba(255,255,255,0.03)');
-    sg.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.beginPath(); ctx.arc(CX, CY, R, 0, Math.PI * 2);
-    ctx.fillStyle = sg; ctx.fill();
-
-    // Border
-    ctx.beginPath(); ctx.arc(CX, CY, R, 0, Math.PI * 2);
-    ctx.strokeStyle = c.border; ctx.lineWidth = 1.5; ctx.stroke();
-
-    // Dot position callback — project target onto sphere
-    const dot = proj([-(this.targetRotation[0]), -(this.targetRotation[1] / 0.28)]);
-    if (dot && this.onDotPosition) {
-      const displayScale = (this.canvas.offsetWidth || this.W / this.DPR) / this.W;
-      this.onDotPosition(dot[0] * displayScale, dot[1] * displayScale);
+    const dots: typeof this.dots = [];
+    for (let lat = -82; lat <= 84; lat += DOT_STEP_DEG) {
+      const ring = Math.max(1, Math.round((360 * Math.cos(lat * Math.PI / 180)) / DOT_STEP_DEG));
+      for (let i = 0; i < ring; i++) {
+        const lon = -180 + (i + 0.5) * (360 / ring);
+        const px = Math.floor(((lon + 180) / 360) * W);
+        const py = Math.floor(((90 - lat) / 180) * H);
+        if (pixels[(py * W + px) * 4 + 3] > 0) dots.push({ lon, lat, v: vec(lon, lat) });
+      }
     }
+    this.dots = dots;
   }
 
-  rotateTo(lon: number, lat: number): void {
-    if (this.animId) cancelAnimationFrame(this.animId);
-    this.startRotation = [...this.rotation];
-    this.targetRotation = [-lon, -lat * 0.28, 0];
-    this.animStart = null;
-    this.animId = requestAnimationFrame(t => this.animStep(t));
+  setScene(scene: GlobeScene): void {
+    const focus = this.focusOf(scene);
+    this.scene = scene;
+    if (focus) this.easeTo([-focus.lon, -focus.lat]);
   }
 
-  private lerpAngle(a: number, b: number, t: number): number {
-    const d = ((b - a) % 360 + 540) % 360 - 180;
-    return a + d * t;
+  /** Re-read colours (e.g. after a light/dark switch). */
+  refreshPalette(): void {
+    this.palette = this.readPalette();
   }
 
-  private easeOutCubic(t: number): number {
-    return 1 - Math.pow(1 - t, 3);
+  start(): void {
+    const loop = (now: number) => {
+      this.raf = requestAnimationFrame(loop);
+      if (now - this.lastFrame < FRAME_MS) return;
+      this.lastFrame = now;
+      this.tick(now);
+      this.draw(now);
+    };
+    if (this.raf === null) this.raf = requestAnimationFrame(loop);
   }
 
-  private animStep(time: number): void {
-    if (!this.animStart) this.animStart = time;
-    const elapsed = time - this.animStart;
-    const progress = Math.min(elapsed / this.ANIM_DURATION, 1);
-    const eased = this.easeOutCubic(progress);
+  stop(): void {
+    if (this.raf !== null) cancelAnimationFrame(this.raf);
+    this.raf = null;
+  }
 
-    for (let i = 0; i < 3; i++) {
-      this.rotation[i] = this.lerpAngle(this.startRotation[i], this.targetRotation[i], eased);
+  // ── internals ──────────────────────────────────────────────────────────
+
+  private readPalette(): Palette {
+    const css = getComputedStyle(this.canvas);
+    const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+    return {
+      dot: v('--globe-dot', '#7c8794'),
+      sphere: v('--globe-sphere', '#f4f6f9'),
+      sphereEdge: v('--globe-sphere-edge', '#dfe4ea'),
+      glow: v('--globe-glow', 'rgba(120,150,190,0.35)'),
+      glowFade: fade(v('--globe-glow', 'rgba(120,150,190,0.35)')),
+      glowOn: v('--globe-glow-on', 'rgba(22,163,74,0.3)'),
+      glowOnFade: fade(v('--globe-glow-on', 'rgba(22,163,74,0.3)')),
+      accent: v('--globe-accent', '#1f9d55'),
+      muted: v('--globe-muted', '#5b6673'),
+    };
+  }
+
+  /** Centre on the proxy when active; frame both ends of the trip when they fit. */
+  private focusOf(scene: GlobeScene): LatLon | null {
+    const { real, proxy } = scene;
+    if ((scene.active || scene.connecting) && proxy) {
+      if (real && geoDistance([real.lon, real.lat], [proxy.lon, proxy.lat]) < 1.6) {
+        const [lon, lat] = geoInterpolate([real.lon, real.lat], [proxy.lon, proxy.lat])(0.5);
+        return { lon, lat };
+      }
+      return proxy;
+    }
+    return real ?? proxy;
+  }
+
+  private easeTo(target: [number, number]): void {
+    this.from = [...this.view];
+    // Take the short way round in longitude.
+    const d = ((target[0] - this.view[0]) % 360 + 540) % 360 - 180;
+    this.to = [this.view[0] + d, Math.max(-60, Math.min(60, target[1]))];
+    this.easeStart = performance.now();
+  }
+
+  private tick(now: number): void {
+    if (this.dragging) return;
+    if (now < this.resumeAt) return;
+    if (this.resumeAt && now >= this.resumeAt) {
+      this.resumeAt = 0;
+      const focus = this.focusOf(this.scene);
+      if (focus) this.easeTo([-focus.lon, -focus.lat]);
+    }
+    const t = Math.min(1, (now - this.easeStart) / EASE_MS);
+    const k = easeInOut(t);
+    this.view = [this.from[0] + (this.to[0] - this.from[0]) * k, this.from[1] + (this.to[1] - this.from[1]) * k];
+  }
+
+  private draw(now: number): void {
+    const { ctx, proj, size, r, palette: c } = this;
+    const cx = size / 2, cy = size / 2;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+    proj.rotate([this.view[0], this.view[1], 0]);
+
+    // Atmosphere glow behind the sphere, tinted while the proxy route is live.
+    const on = this.scene.active;
+    const glow = ctx.createRadialGradient(cx, cy, r * 0.96, cx, cy, r * 1.3);
+    glow.addColorStop(0, on ? c.glowOn : c.glow);
+    glow.addColorStop(1, on ? c.glowOnFade : c.glowFade);
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(cx, cy, r * 1.3, 0, Math.PI * 2); ctx.fill();
+
+    // Sphere body, lit from the top-left.
+    const body = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.1, cx, cy, r);
+    body.addColorStop(0, c.sphere);
+    body.addColorStop(1, c.sphereEdge);
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+
+    // Land dots, fading and shrinking toward the limb for depth.
+    const center = vec(-this.view[0], -this.view[1]);
+    ctx.fillStyle = c.dot;
+    for (const d of this.dots) {
+      const cos = d.v[0] * center[0] + d.v[1] * center[1] + d.v[2] * center[2];
+      if (cos <= 0.02) continue;
+      const p = proj([d.lon, d.lat]);
+      if (!p) continue;
+      ctx.globalAlpha = 0.18 + 0.72 * cos;
+      const s = 0.55 + 0.75 * cos;
+      ctx.fillRect(p[0] - s / 2, p[1] - s / 2, s, s);
+    }
+    ctx.globalAlpha = 1;
+
+    const { real, proxy, active, connecting } = this.scene;
+    if (real && proxy && (active || connecting)) this.drawArc(real, proxy, now, connecting);
+    if (real) this.drawMarker(real, active || connecting ? c.muted : c.accent, !(active || connecting), now, 0.75);
+    if (proxy && (active || connecting)) this.drawMarker(proxy, c.accent, true, now, 1);
+  }
+
+  /** Visible screen point for a lon/lat, or null on the far side. */
+  private screen(lon: number, lat: number): [number, number] | null {
+    const center: [number, number] = [-this.view[0], -this.view[1]];
+    if (geoDistance([lon, lat], center) > Math.PI / 2) return null;
+    return this.proj([lon, lat]);
+  }
+
+  private drawMarker(at: LatLon, color: string, pulse: boolean, now: number, scale: number): void {
+    const p = this.screen(at.lon, at.lat);
+    if (!p) return;
+    const { ctx } = this;
+    if (pulse) {
+      const phase = (now % 2200) / 2200;
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], 4 + phase * 14, 0, Math.PI * 2);
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = (1 - phase) * 0.55;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], 5.5 * scale, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], 3.8 * scale, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  /** Great-circle arc lifted off the surface, with a light pulse travelling to the proxy. */
+  private drawArc(from: LatLon, to: LatLon, now: number, connecting: boolean): void {
+    const { ctx, palette: c, size } = this;
+    const cx = size / 2, cy = size / 2;
+    const interp = geoInterpolate([from.lon, from.lat], [to.lon, to.lat]);
+    const dist = geoDistance([from.lon, from.lat], [to.lon, to.lat]);
+    const lift = Math.min(0.28, 0.06 + dist * 0.12);
+    const N = 64;
+    const pts: ([number, number] | null)[] = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const [lon, lat] = interp(t);
+      const p = this.screen(lon, lat);
+      if (!p) { pts.push(null); continue; }
+      const h = 1 + lift * Math.sin(Math.PI * t);
+      pts.push([cx + (p[0] - cx) * h, cy + (p[1] - cy) * h]);
     }
 
-    this.proj.rotate(this.rotation);
-    this.draw();
+    const stroke = (alpha: number, width: number, from = 0, to = N) => {
+      ctx.beginPath();
+      let pen = false;
+      for (let i = from; i <= to; i++) {
+        const p = pts[i];
+        if (!p) { pen = false; continue; }
+        if (pen) ctx.lineTo(p[0], p[1]); else { ctx.moveTo(p[0], p[1]); pen = true; }
+      }
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = width;
+      ctx.strokeStyle = c.accent;
+      ctx.stroke();
+    };
 
-    if (progress < 1) {
-      this.animId = requestAnimationFrame(t => this.animStep(t));
-    } else {
-      this.rotation = [...this.targetRotation];
-      this.proj.rotate(this.rotation);
-      this.draw();
-      this.animId = null;
-      this.animStart = null;
-    }
+    ctx.lineCap = 'round';
+    stroke(connecting ? 0.25 + 0.2 * Math.sin(now / 180) : 0.35, 1.4);
+    // Travelling pulse.
+    const head = Math.floor(((now % 1800) / 1800) * (N + 12));
+    stroke(0.95, 2.2, Math.max(0, head - 12), Math.min(N, head));
+    ctx.globalAlpha = 1;
   }
 
-  destroy(): void {
-    if (this.animId) cancelAnimationFrame(this.animId);
+  private bindDrag(): void {
+    const el = this.canvas;
+    el.addEventListener('pointerdown', e => {
+      this.dragging = { x: e.clientX, y: e.clientY, view: [...this.view] };
+      el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener('pointermove', e => {
+      if (!this.dragging) return;
+      const k = 180 / (Math.PI * this.r);
+      this.view = [
+        this.dragging.view[0] + (e.clientX - this.dragging.x) * k,
+        Math.max(-70, Math.min(70, this.dragging.view[1] - (e.clientY - this.dragging.y) * k)),
+      ];
+    });
+    const end = () => {
+      if (!this.dragging) return;
+      this.dragging = null;
+      this.from = [...this.view];
+      this.to = [...this.view];
+      this.resumeAt = performance.now() + 1600; // then glide back to the focus
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
   }
 }

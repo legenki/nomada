@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { migrateData, MAX_SYNC_DISMISSED } from '../src/lib/storage-migration';
+import { migrateData } from '../src/lib/storage-migration';
 
 const profile = (id: string) => ({
   id, name: id, description: '', color: '#ff0000', createdAt: '', updatedAt: '', tags: [],
@@ -10,56 +10,58 @@ const profile = (id: string) => ({
   },
 });
 
+const place = { ip: '1.1.1.1', city: 'X', country: 'Y', countryCode: 'YY', lat: 0, lon: 0, timezone: 'UTC', locale: 'en-YY', checkedAt: 0 };
+
 describe('migrateData', () => {
   it('starts a fresh install OFF with nothing selected', () => {
     const result = migrateData(null);
     expect(result.version).toBe(3);
     expect(result.enabled).toBe(false);
-    expect(result.mode).toBe('system');
     expect(result.profiles).toEqual([]);
-    expect(result.geo.enabled).toBe(false);
-    expect(result.syncEnabled).toBe(true);
-    expect(result.syncDismissed).toEqual([]);
-  });
-
-  it('treats installs from before the master switch as ON', () => {
-    const result = migrateData({ version: 3, mode: 'system', profiles: [], geo: { enabled: true, locale: 'ja-JP' } });
-    expect(result.enabled).toBe(true);
-    expect(result.geo).toEqual({ enabled: true, locale: 'ja-JP' });
-  });
-
-  it('maps the removed "direct" mode to system', () => {
-    expect(migrateData({ version: 3, mode: 'direct', profiles: [] }).mode).toBe('system');
-  });
-
-  it('resets mode to system when activeProfileId is stale', () => {
-    const result = migrateData({ version: 3, mode: 'profile', profiles: [], activeProfileId: 'ghost' });
-    expect(result.mode).toBe('system');
     expect(result.activeProfileId).toBeUndefined();
   });
 
-  it('keeps a valid active profile', () => {
-    const result = migrateData({ version: 3, enabled: true, mode: 'profile', profiles: [profile('p1')], activeProfileId: 'p1' });
-    expect(result.mode).toBe('profile');
+  it('keeps an enabled install with a valid selection ON', () => {
+    const result = migrateData({ version: 3, profiles: [profile('p1')], activeProfileId: 'p1' });
+    expect(result.enabled).toBe(true);
     expect(result.activeProfileId).toBe('p1');
+  });
+
+  it('cannot be ON without a proxy (the old geo-only mode is gone)', () => {
+    const result = migrateData({ version: 3, enabled: true, profiles: [], geo: { enabled: true, locale: 'ja-JP' } });
+    expect(result.enabled).toBe(false);
+  });
+
+  it('drops a stale selection', () => {
+    const result = migrateData({ version: 3, enabled: true, profiles: [], activeProfileId: 'ghost' });
+    expect(result.activeProfileId).toBeUndefined();
+    expect(result.enabled).toBe(false);
   });
 
   it('restores the profile older builds parked in lastProfileId while OFF', () => {
-    const result = migrateData({
-      version: 3, enabled: false, mode: 'system', profiles: [profile('p1')], lastProfileId: 'p1',
-    });
-    expect(result.mode).toBe('profile');
+    const result = migrateData({ version: 3, enabled: false, profiles: [profile('p1')], lastProfileId: 'p1' });
     expect(result.activeProfileId).toBe('p1');
-    expect('lastProfileId' in result).toBe(false);
+    expect(result.enabled).toBe(false);
   });
 
-  it('normalizes dismissed "profileId:CC" pairs to unique country codes', () => {
-    const result = migrateData({ version: 3, syncDismissed: ['p1:jp', 'p2:JP', 'RU', 42] });
-    expect(result.syncDismissed).toEqual(['JP', 'RU']);
+  it('removes fields of the retired city picker and sync suggestions', () => {
+    const result = migrateData({
+      version: 3, mode: 'profile', geo: { enabled: true }, syncEnabled: true, syncDismissed: ['JP'], lastProfileId: 'x',
+    }) as unknown as Record<string, unknown>;
+    for (const key of ['mode', 'geo', 'syncEnabled', 'syncDismissed', 'lastProfileId']) expect(key in result).toBe(false);
   });
 
-  it('caps the dismissed list', () => {
-    const many = Array.from({ length: MAX_SYNC_DISMISSED + 10 }, (_, i) => `C${i}`);
-    expect(migrateData({ version: 3, syncDismissed: many }).syncDismissed).toHaveLength(MAX_SYNC_DISMISSED);
+  it('forgets a proxy location that belongs to another profile', () => {
+    const result = migrateData({
+      version: 3, profiles: [profile('p1')], activeProfileId: 'p1', proxyPlace: { ...place, profileId: 'p2' },
+    });
+    expect(result.proxyPlace).toBeUndefined();
+  });
+
+  it('keeps the proxy location of the selected profile', () => {
+    const result = migrateData({
+      version: 3, profiles: [profile('p1')], activeProfileId: 'p1', proxyPlace: { ...place, profileId: 'p1' },
+    });
+    expect(result.proxyPlace?.ip).toBe('1.1.1.1');
   });
 });

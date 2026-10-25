@@ -1,18 +1,4 @@
-// Maps ISO 3166-1 alpha-2 country code → location key in LOCATIONS
-// Used to suggest a preset city for the country of the detected proxy IP
-export const COUNTRY_TO_LOCATION: Record<string, string> = {
-  AU: 'sydney',      NZ: 'auckland',    JP: 'tokyo',       KR: 'seoul',
-  SG: 'singapore',   CN: 'beijing',     HK: 'hongKong',    IN: 'delhi',
-  AE: 'dubai',       IR: 'tehran',      RU: 'saintPetersburg', TR: 'istanbul',
-  UA: 'kyiv',        PL: 'warsaw',      DE: 'berlin',      FR: 'paris',
-  GB: 'london',      NL: 'amsterdam',   ES: 'madrid',      IT: 'rome',
-  EG: 'cairo',       NG: 'lagos',       KE: 'nairobi',     US: 'newYork',
-  CA: 'toronto',     BR: 'saoPaulo',    MX: 'mexicoCity',  CO: 'bogota',
-  AR: 'buenosAires',
-};
-
-// Maps ISO country code → BCP-47 locale for the "Use my IP location" feature,
-// where the IP may resolve to a country without a preset city.
+// Maps ISO country code → BCP-47 locale a browser in that country typically uses.
 const COUNTRY_TO_LOCALE: Record<string, string> = {
   AU: 'en-AU', NZ: 'en-NZ', JP: 'ja-JP', KR: 'ko-KR', SG: 'en-SG', CN: 'zh-CN',
   HK: 'zh-HK', IN: 'en-IN', AE: 'ar-AE', IR: 'fa-IR', RU: 'ru-RU', TR: 'tr-TR',
@@ -42,4 +28,10 @@ export function localeForCountry(countryCode: string, baseLanguage = 'en'): stri
 export function acceptLanguageFor(locale: string): string {
   const lang = locale.split('-')[0];
   return lang && lang !== locale ? `${locale},${lang};q=0.9` : locale;
+}
+
+/** navigator.languages for a locale: ["es-AR", "es"]. */
+export function languagesFor(locale: string): string[] {
+  const lang = locale.split('-')[0];
+  return lang && lang !== locale ? [locale, lang] : [locale];
 }

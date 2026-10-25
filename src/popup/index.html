@@ -6,94 +6,44 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="popup-header">
-    <div class="popup-logo">
-      <div class="logo-icon">
-        <svg viewBox="0 0 24 24">
-          <path d="M 14.474609 1.9746094 A 1.5 1.5 0 1 0 14.474609 4.9746094 A 1.5 1.5 0 1 0 14.474609 1.9746094 z M 11.759766 2.0117188 C 9.2547656 2.0717188 6.9798594 3.0576719 5.2558594 4.6386719 C 5.9088594 4.8836719 6.4689062 5.3103281 6.8789062 5.8613281 C 8.1309063 4.8153281 9.7076406 4.1512969 11.431641 4.0292969 C 11.398641 3.8492969 11.375 3.6646094 11.375 3.4746094 C 11.375 2.9426094 11.522766 2.4497187 11.759766 2.0117188 z M 17.552734 3.6894531 C 17.501734 4.4144531 17.207187 5.0692656 16.742188 5.5722656 C 18.713187 7.0312656 20 9.365 20 12 C 20 13.285 19.688437 14.495266 19.148438 15.572266 C 19.810437 15.791266 20.380547 16.191656 20.810547 16.722656 C 21.567547 15.314656 22 13.707 22 12 C 22 8.539 20.231734 5.4854531 17.552734 3.6894531 z M 4 6 A 2 2 0 0 0 4 10 A 2 2 0 0 0 4 6 z M 12 6 C 8.691 6 6 8.691 6 12 C 6 15.309 8.691 18 12 18 C 15.309 18 18 15.309 18 12 C 18 8.691 15.309 6 12 6 z M 12 8 C 14.206 8 16 9.794 16 12 C 16 14.206 14.206 16 12 16 C 9.794 16 8 14.206 8 12 C 8 9.794 9.794 8 12 8 z M 12 10 A 2 2 0 0 0 12 14 A 2 2 0 0 0 12 10 z M 2.0507812 11.017578 C 2.0187812 11.340578 2 11.668 2 12 C 2 17.514 6.486 22 12 22 C 13.188 22 14.323813 21.780438 15.382812 21.398438 C 14.928812 20.903437 14.609281 20.287609 14.488281 19.599609 C 13.704281 19.856609 12.869 20 12 20 C 7.589 20 4 16.411 4 12 C 4 11.864 4.0135313 11.731656 4.0195312 11.597656 C 4.0125313 11.597656 4.007 11.599609 4 11.599609 C 3.28 11.599609 2.6137812 11.382578 2.0507812 11.017578 z M 18.025391 16.974609 A 2 2 0 0 0 18.025391 20.974609 A 2 2 0 0 0 18.025391 16.974609 z"/>
-        </svg>
-      </div>
+  <header class="bar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M 14.474609 1.9746094 A 1.5 1.5 0 1 0 14.474609 4.9746094 A 1.5 1.5 0 1 0 14.474609 1.9746094 z M 11.759766 2.0117188 C 9.2547656 2.0717188 6.9798594 3.0576719 5.2558594 4.6386719 C 5.9088594 4.8836719 6.4689062 5.3103281 6.8789062 5.8613281 C 8.1309063 4.8153281 9.7076406 4.1512969 11.431641 4.0292969 C 11.398641 3.8492969 11.375 3.6646094 11.375 3.4746094 C 11.375 2.9426094 11.522766 2.4497187 11.759766 2.0117188 z M 17.552734 3.6894531 C 17.501734 4.4144531 17.207187 5.0692656 16.742188 5.5722656 C 18.713187 7.0312656 20 9.365 20 12 C 20 13.285 19.688437 14.495266 19.148438 15.572266 C 19.810437 15.791266 20.380547 16.191656 20.810547 16.722656 C 21.567547 15.314656 22 13.707 22 12 C 22 8.539 20.231734 5.4854531 17.552734 3.6894531 z M 4 6 A 2 2 0 0 0 4 10 A 2 2 0 0 0 4 6 z M 12 6 C 8.691 6 6 8.691 6 12 C 6 15.309 8.691 18 12 18 C 15.309 18 18 15.309 18 12 C 18 8.691 15.309 6 12 6 z M 12 8 C 14.206 8 16 9.794 16 12 C 16 14.206 14.206 16 12 16 C 9.794 16 8 14.206 8 12 C 8 9.794 9.794 8 12 8 z M 12 10 A 2 2 0 0 0 12 14 A 2 2 0 0 0 12 10 z M 2.0507812 11.017578 C 2.0187812 11.340578 2 11.668 2 12 C 2 17.514 6.486 22 12 22 C 13.188 22 14.323813 21.780438 15.382812 21.398438 C 14.928812 20.903437 14.609281 20.287609 14.488281 19.599609 C 13.704281 19.856609 12.869 20 12 20 C 7.589 20 4 16.411 4 12 C 4 11.864 4.0135313 11.731656 4.0195312 11.597656 C 4.0125313 11.597656 4.007 11.599609 4 11.599609 C 3.28 11.599609 2.6137812 11.382578 2.0507812 11.017578 z M 18.025391 16.974609 A 2 2 0 0 0 18.025391 20.974609 A 2 2 0 0 0 18.025391 16.974609 z"/></svg>
       Nomada
     </div>
-    <label class="master-switch" title="Enable / disable Nomada">
-      <input type="checkbox" id="masterToggle">
-      <span class="switch-track"><span class="switch-thumb"></span></span>
+    <label class="switch" title="Turn Nomada on or off">
+      <input type="checkbox" id="power" role="switch" aria-label="Nomada">
+      <span class="track"><span class="thumb"></span></span>
     </label>
   </header>
 
-  <section class="globe-section">
+  <main>
     <div class="globe-wrap">
-      <canvas id="globeCanvas"></canvas>
-      <div class="loc-dot" id="locDot" style="top:50%;left:50%;"></div>
+      <canvas id="globe" aria-hidden="true"></canvas>
     </div>
-    <div class="location-name" id="locationName">—</div>
-    <div class="location-clock" id="locationClock">
-      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
-        <circle cx="8" cy="8" r="6.2"/><path d="M8 4.5V8l2.5 1.6"/>
-      </svg>
-      <span id="clockTime">—</span>
-      <span class="clock-sep">·</span>
-      <span id="clockLocale">—</span>
-    </div>
-    <div class="location-coords" id="locationCoords">—</div>
-    <div class="status-pills">
-      <span class="pill green" id="geoActivePill" style="display:none;">
-        <span class="dot"></span>Geolocation active
-      </span>
-    </div>
-    <button class="ip-sync-btn" id="ipSyncBtn" title="Match location to your current IP address">
-      <svg class="ip-sync-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7">
-        <path d="M8 1.5c2.5 2.8 2.5 9.2 0 12C5.5 10.7 5.5 4.3 8 1.5Z"/>
-        <circle cx="8" cy="8" r="6.3"/><path d="M1.7 8h12.6"/>
-      </svg>
-      <span class="ip-sync-label">Use my IP location</span>
-    </button>
-  </section>
 
-  <section class="location-selector">
-    <div class="search-wrap">
-      <svg class="search-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
-        <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/>
-      </svg>
-      <input class="search-input" id="citySearch" placeholder="Search city or country…" autocomplete="off">
-    </div>
-    <div class="city-grid" id="cityGrid"></div>
-  </section>
-
-  <div class="suggestion" id="suggestionBanner" style="display:none;">
-    <div class="suggestion-icon">💡</div>
-    <div class="suggestion-body">
-      <div class="suggestion-title"></div>
-      <div class="suggestion-text"></div>
-      <div class="suggestion-actions">
-        <button class="btn-sm primary btn-accept">Sync</button>
-        <button class="btn-sm secondary btn-dismiss">Not now</button>
+    <section class="identity" aria-live="polite">
+      <div class="status" id="status" data-state="off">
+        <span class="status-dot"></span><span id="statusText">Your real location</span>
       </div>
-    </div>
-  </div>
+      <h1 class="place" id="place">Locating…</h1>
+      <p class="country" id="country">&nbsp;</p>
+      <dl class="facts">
+        <div><dt>Local time</dt><dd id="time">—</dd></div>
+        <div><dt>Language</dt><dd id="lang">—</dd></div>
+        <div><dt>IP address</dt><dd id="ip">—</dd></div>
+      </dl>
+      <p class="note" id="note" role="alert" hidden></p>
+    </section>
 
-  <section class="section">
-    <div class="section-title">
-      Proxy profile
-      <span class="section-link" id="manageProxyBtn">Manage</span>
-    </div>
-    <div class="proxy-card proxy-selected" id="proxyCard" style="display:none;">
-      <div class="proxy-color" id="proxyColorDot"></div>
-      <div class="proxy-info">
-        <div class="proxy-name" id="proxyName"></div>
-        <div class="proxy-meta" id="proxyMeta"></div>
+    <section class="proxies">
+      <div class="proxies-head">
+        <span>Proxy</span>
+        <button class="link" id="manage" type="button">Manage</button>
       </div>
-      <span class="active-badge" id="proxyBadge"></span>
-      <button class="btn-sm secondary btn-disconnect" id="proxyDisconnect" title="Stop routing traffic through this proxy">Disconnect</button>
-    </div>
-    <div class="proxy-list" id="proxyList"></div>
-    <div class="proxy-error" id="proxyError" role="alert" hidden></div>
-  </section>
-
-  <footer class="popup-footer">
-    <span class="section-link" id="settingsBtn">Settings</span>
-    <span class="version" id="versionText"></span>
-  </footer>
+      <div class="proxy-list" id="proxyList" role="radiogroup" aria-label="Proxy"></div>
+    </section>
+  </main>
 
   <script type="module" src="./index.ts"></script>
 </body>

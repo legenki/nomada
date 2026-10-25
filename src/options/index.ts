@@ -1,6 +1,7 @@
 import { readData, updateProfiles } from '../lib/storage';
 import type { ActionResult, BgMessage, ProxyProfile } from '../types';
 import { escHtml, safeColor } from '../lib/html';
+import { validateProfile } from './validate';
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -71,21 +72,13 @@ function closeModal(): void {
 }
 
 function updateTypeFields(): void {
-  const isPac = byId<HTMLSelectElement>('pType').value === 'pac';
+  const type = byId<HTMLSelectElement>('pType').value;
+  const isPac = type === 'pac';
+  const isSocks = type === 'socks5';
   byId<HTMLElement>('hostPortFields').style.display = isPac ? 'none' : 'flex';
   byId<HTMLElement>('pacFields').style.display = isPac ? 'block' : 'none';
-}
-
-/** Returns an error message, or null when the form is valid. */
-function validate(type: ProxyProfile['config']['type'], host: string, port: number, pacUrl: string): string | null {
-  if (type === 'pac') {
-    return /^(https?|file):\/\//i.test(pacUrl) || /^([a-zA-Z]:[\\/]|\/)/.test(pacUrl)
-      ? null
-      : 'PAC URL must start with http://, https:// or file://';
-  }
-  if (!host || /\s/.test(host)) return 'Host is required (no spaces)';
-  if (!Number.isInteger(port) || port < 1 || port > 65535) return 'Port must be a number from 1 to 65535';
-  return null;
+  const hint = document.getElementById('socksAuthHint');
+  if (hint) hint.style.display = isSocks ? 'block' : 'none';
 }
 
 function showStatus(text: string): void {
@@ -101,7 +94,8 @@ async function saveProfile(): Promise<void> {
   const host = byId<HTMLInputElement>('pHost').value.trim();
   const port = Number(byId<HTMLInputElement>('pPort').value);
   const pacUrl = byId<HTMLInputElement>('pPacUrl').value.trim();
-  const error = validate(type, host, port, pacUrl);
+  const user = byId<HTMLInputElement>('pUser').value;
+  const error = validateProfile(type, host, port, pacUrl, user);
   if (error) { alert(error); return; }
 
   const id = editingId ?? generateId();

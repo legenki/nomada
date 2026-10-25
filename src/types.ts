@@ -30,85 +30,73 @@ export interface ProxyProfile {
   tags: string[];
 }
 
-export interface GeoSettings {
-  enabled: boolean;
-  timezone?: string;
-  locale?: string;
-  lat?: number;
-  lon?: number;
-  /** Key into LOCATIONS when a preset city is chosen. */
-  locationKey?: string;
-  /** Display name when the location isn't a preset (e.g. resolved from IP). */
-  cityName?: string;
-  /** ISO 3166-1 alpha-2 country of the location (drives the toolbar badge). */
-  countryCode?: string;
-}
-
-export interface WooPortalData {
-  version: 3;
-  /** Master switch: when false the whole extension is dormant (no geo, proxy released). */
-  enabled: boolean;
-  /** 'profile' routes traffic through activeProfileId; 'system' leaves the proxy untouched. */
-  mode: 'system' | 'profile';
-  profiles: ProxyProfile[];
-  /** Selected profile. Kept while the master switch is OFF so ON restores it. */
-  activeProfileId?: string;
-  geo: GeoSettings;
-  syncEnabled: boolean;
-  /** Country codes the user declined to sync to (capped, most recent last). */
-  syncDismissed: string[];
-  settings: {
-    notifyChange: boolean;
-    notifyError: boolean;
-  };
-}
-
-export type ProxyMode = WooPortalData['mode'];
-
-export interface SyncSuggestion {
-  countryCode: string;
-  locationKey: string;
-  city: string;
-  timezone: string;
-  locale: string;
-  lat: number;
-  lon: number;
-}
-
-/** Full geolocation resolved from the current outgoing IP address. */
-export interface IpLocation {
+/** Where an IP address is, as reported by the IP lookup service. */
+export interface Place {
+  ip: string;
   city: string;
   country: string;
   countryCode: string;
   lat: number;
   lon: number;
   timezone: string;
+  /** Locale a browser in that country would use; drives language + formatting. */
   locale: string;
+  /** When the lookup happened (ms since epoch). */
+  checkedAt: number;
 }
 
-// Messages between popup/options and background
-export type BgMessage =
-  | { type: 'GET_STATE' }
-  | { type: 'CHECK_SYNC' }
-  | { type: 'SYNC_TO_IP' }
-  | { type: 'ENABLE_ALL' }
-  | { type: 'DISABLE_ALL' }
-  | { type: 'ACTIVATE_PROFILE'; payload: { id: string } }
-  | { type: 'DEACTIVATE_PROFILE' }
-  | { type: 'SET_GEO'; payload: GeoSettings }
-  | { type: 'PROFILES_CHANGED' }
-  | { type: 'DISMISS_SYNC_SUGGESTION'; payload: { countryCode: string } }
-  | { type: 'ACCEPT_SYNC_SUGGESTION'; payload: SyncSuggestion };
+/** The exit location of a proxy profile — what sites see while it's active. */
+export interface ProxyPlace extends Place {
+  profileId: string;
+}
+
+export interface WooPortalData {
+  version: 3;
+  /** Master switch: ON routes traffic through the selected proxy and matches its location. */
+  enabled: boolean;
+  profiles: ProxyProfile[];
+  /** Selected profile. Kept while OFF so turning ON reconnects to it. */
+  activeProfileId?: string;
+  /** The user's own location (looked up while not proxied). */
+  realPlace?: Place;
+  /** Location of the selected proxy's exit IP. */
+  proxyPlace?: ProxyPlace;
+  settings: {
+    notifyChange: boolean;
+    notifyError: boolean;
+  };
+}
+
+/** Values the page-level spoofing script applies. */
+export interface SpoofConfig {
+  timezone: string;
+  locale: string;
+  languages: string[];
+  lat: number;
+  lon: number;
+}
 
 export interface ActionResult {
   success: boolean;
   error?: string;
 }
 
+// Messages between popup/options and background
+export type BgMessage =
+  | { type: 'GET_STATE' }
+  | { type: 'REFRESH_PLACE' }
+  | { type: 'ENABLE' }
+  | { type: 'DISABLE' }
+  | { type: 'SELECT_PROFILE'; payload: { id: string } }
+  | { type: 'PROFILES_CHANGED' };
+
 export interface BgState {
   enabled: boolean;
-  mode: ProxyMode;
   profiles: ProxyProfile[];
   activeProfile: ProxyProfile | null;
-  geo: GeoSettings;
+  /** True once traffic goes through the proxy and the page identity matches its location. */
+  protected: boolean;
+  realPlace: Place | null;
+  /** Proxy exit location for the selected profile (null if unknown yet). */
+  proxyPlace: ProxyPlace | null;
 }

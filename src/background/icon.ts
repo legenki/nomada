@@ -1,21 +1,18 @@
 import { readData } from '../lib/storage';
 import { resolveIconPaths } from '../lib/icon-paths';
 import { nearestIconColor } from '../lib/icon-color';
-import { countryOfGeo } from '../lib/locations';
-import { isGeoActive } from '../lib/state';
-import { activeProfileOf } from './proxy';
+import { activeProfileOf, isProtected, proxyPlaceOf } from '../lib/state';
 
 /**
  * Sync the toolbar icon and badge to the current stored state:
- * - colour: grey when not protecting, profile-tinted (or green) when ON
- * - badge: the location's country code when ON, empty otherwise
+ * - colour: grey when off, tinted with the proxy profile's colour when protected
+ * - badge: the proxy location's country code when protected
  */
 export async function refreshIcon(): Promise<void> {
   const data = await readData();
-  const on = isGeoActive(data) || !!activeProfileOf(data);
+  const on = isProtected(data);
   const proxyColor = on ? nearestIconColor(activeProfileOf(data)?.color) : null;
-
-  const badge = on && isGeoActive(data) ? countryOfGeo(data.geo) ?? '' : '';
+  const badge = on ? proxyPlaceOf(data)?.countryCode ?? '' : '';
   await Promise.allSettled([
     chrome.action.setIcon({ path: resolveIconPaths(on, proxyColor) }),
     chrome.action.setBadgeText({ text: badge }),

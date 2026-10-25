@@ -1,10 +1,6 @@
 import { Globe } from './globe';
-import { renderCityGrid, renderProxySection, renderSuggestionBanner, renderStatusPills } from './ui';
-import type { ProxyElements } from './ui';
-import type { ActionResult, BgMessage, BgState, SyncSuggestion } from '../types';
-import { findLocationByKey } from '../lib/locations';
-import type { Location } from '../lib/locations';
-import { hasGeoTarget } from '../lib/state';
+import { escHtml, safeColor } from '../lib/html';
+import type { ActionResult, BgMessage, BgState, Place, ProxyProfile } from '../types';
 
 function sendMsg<T = unknown>(msg: BgMessage, retries = 3): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -24,246 +20,173 @@ function sendMsg<T = unknown>(msg: BgMessage, retries = 3): Promise<T> {
 
 const $ = <T extends Element>(sel: string) => document.querySelector<T>(sel)!;
 
-const globeCanvas    = $<HTMLCanvasElement>('#globeCanvas');
-const locDot         = $<HTMLElement>('#locDot');
-const masterToggle   = $<HTMLInputElement>('#masterToggle');
-const locationName   = $<HTMLElement>('#locationName');
-const locationCoords = $<HTMLElement>('#locationCoords');
-const locationClock  = $<HTMLElement>('#locationClock');
-const clockTime      = $<HTMLElement>('#clockTime');
-const clockLocale    = $<HTMLElement>('#clockLocale');
-const geoActivePill  = $<HTMLElement>('#geoActivePill');
-const ipSyncBtn      = $<HTMLButtonElement>('#ipSyncBtn');
-const citySearch     = $<HTMLInputElement>('#citySearch');
-const cityGrid       = $<HTMLElement>('#cityGrid');
-const suggestionBanner = $<HTMLElement>('#suggestionBanner');
-const proxyError     = $<HTMLElement>('#proxyError');
-const versionText    = $<HTMLElement>('#versionText');
-const proxyEls: ProxyElements = {
-  card: $<HTMLElement>('#proxyCard'),
-  name: $<HTMLElement>('#proxyName'),
-  meta: $<HTMLElement>('#proxyMeta'),
-  badge: $<HTMLElement>('#proxyBadge'),
-  colorDot: $<HTMLElement>('#proxyColorDot'),
-  disconnect: $<HTMLButtonElement>('#proxyDisconnect'),
-  list: $<HTMLElement>('#proxyList'),
-};
+const power      = $<HTMLInputElement>('#power');
+const status     = $<HTMLElement>('#status');
+const statusText = $<HTMLElement>('#statusText');
+const placeEl    = $<HTMLElement>('#place');
+const countryEl  = $<HTMLElement>('#country');
+const timeEl     = $<HTMLElement>('#time');
+const langEl     = $<HTMLElement>('#lang');
+const ipEl       = $<HTMLElement>('#ip');
+const note       = $<HTMLElement>('#note');
+const proxyList  = $<HTMLElement>('#proxyList');
 
-const globe = new Globe(globeCanvas, 200);
-let currentState: BgState | null = null;
-let activeSuggestion: SyncSuggestion | null = null;
-let clockTimezone: string | null = null;
-let clockTimer: ReturnType<typeof setInterval> | null = null;
+const globe = new Globe($<HTMLCanvasElement>('#globe'), 260);
 
-function updateLocationDisplay(loc: Location): void {
-  showLocation(loc.name, loc.lat, loc.lon, loc.locale, loc.timezone);
-}
+let state: BgState | null = null;
+let connecting = false;
+let clockZone: string | null = null;
 
-/** Render a location from any source (preset city or resolved IP). */
-function showLocation(name: string, lat: number, lon: number, locale: string, timezone: string): void {
-  locationName.textContent = name;
-  const latStr = `${Math.abs(lat).toFixed(2)}° ${lat >= 0 ? 'N' : 'S'}`;
-  const lonStr = `${Math.abs(lon).toFixed(2)}° ${lon >= 0 ? 'E' : 'W'}`;
-  locationCoords.textContent = `${latStr} · ${lonStr}`;
-  clockLocale.textContent = locale;
-  locationClock.hidden = false;
-  startClock(timezone);
-}
-
-/** Live clock showing the current time in the selected location's timezone. */
-function startClock(timezone: string): void {
-  clockTimezone = timezone;
-  if (clockTimer) clearInterval(clockTimer);
-  tickClock();
-  clockTimer = setInterval(tickClock, 1000);
-}
+// ── Rendering ───────────────────────────────────────────────────────────────
 
 function tickClock(): void {
-  if (!clockTimezone) { clockTime.textContent = '—'; return; }
+  if (!clockZone) { timeEl.textContent = '—'; return; }
   try {
-    clockTime.textContent = new Intl.DateTimeFormat('en-GB', {
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: false, timeZone: clockTimezone,
+    timeEl.textContent = new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: clockZone,
     }).format(new Date());
   } catch {
-    clockTime.textContent = '—';
+    timeEl.textContent = '—';
   }
 }
 
-function clearClock(): void {
-  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
-  clockTimezone = null;
-  clockTime.textContent = '—';
-  clockLocale.textContent = '—';
-  locationClock.hidden = true;
+function showPlace(place: Place | null, pending: string): void {
+  placeEl.textContent = place?.city ?? pending;
+  countryEl.textContent = place?.country || ' ';
+  langEl.textContent = place?.locale ?? '—';
+  ipEl.textContent = place?.ip ?? '—';
+  ipEl.title = place?.ip ?? '';
+  clockZone = place?.timezone ?? null;
+  tickClock();
 }
 
-function showProxyError(message: string | null): void {
-  proxyError.textContent = message ?? '';
-  proxyError.hidden = !message;
+function showNote(message: string | null): void {
+  note.textContent = message ?? '';
+  note.hidden = !message;
 }
 
-function applyState(state: BgState): void {
-  currentState = state;
-
-  masterToggle.checked = state.enabled;
-  document.body.classList.toggle('is-disabled', !state.enabled);
-
-  const g = state.geo;
-  const loc = g.locationKey ? findLocationByKey(g.locationKey) : null;
-  if (loc) {
-    globe.rotateTo(loc.lon, loc.lat);
-    updateLocationDisplay(loc);
-  } else if (hasGeoTarget(g) && g.lat !== undefined && g.lon !== undefined) {
-    // Location resolved from IP (not a preset city)
-    globe.rotateTo(g.lon, g.lat);
-    showLocation(g.cityName ?? 'Custom location', g.lat, g.lon, g.locale ?? '', g.timezone ?? 'UTC');
-  } else {
-    locationName.textContent = 'Choose a location';
-    locationCoords.textContent = 'Pick a city below or use your IP';
-    clearClock();
-  }
-
-  renderStatusPills(geoActivePill, state);
-  renderCityGrid(cityGrid, citySearch.value, g.locationKey, handleCitySelect);
-  renderProxySection(proxyEls, state, {
-    onActivate: handleActivateProfile,
-    onDeactivate: handleDeactivateProfile,
-    onAdd: () => chrome.runtime.openOptionsPage(),
-  });
+function proxyMeta(p: ProxyProfile): string {
+  return p.config.type === 'pac' ? `PAC · ${p.config.pacUrl}` : `${p.config.type.toUpperCase()} · ${p.config.host}:${p.config.port}`;
 }
 
-async function refresh(): Promise<void> {
-  applyState(await sendMsg<BgState>({ type: 'GET_STATE' }));
-}
-
-/** Run a state-changing action, refresh the UI and surface any proxy error. */
-async function act(msg: BgMessage): Promise<ActionResult | undefined> {
-  try {
-    const result = await sendMsg<ActionResult>(msg);
-    showProxyError(result && !result.success ? result.error ?? 'Something went wrong' : null);
-    await refresh();
-    return result;
-  } catch (e) {
-    showProxyError((e as Error).message);
-    return undefined;
-  }
-}
-
-async function handleMasterToggle(): Promise<void> {
-  const enable = masterToggle.checked;
-  document.body.classList.toggle('is-disabled', !enable);
-  await act({ type: enable ? 'ENABLE_ALL' : 'DISABLE_ALL' });
-  if (enable) void checkSyncInBackground();
-}
-
-async function handleCitySelect(loc: Location): Promise<void> {
-  globe.rotateTo(loc.lon, loc.lat);
-  updateLocationDisplay(loc);
-  renderCityGrid(cityGrid, citySearch.value, loc.key, handleCitySelect);
-  // Picking a place also turns the extension ON (handled by the background).
-  await act({
-    type: 'SET_GEO',
-    payload: {
-      enabled: true,
-      timezone: loc.timezone,
-      locale: loc.locale,
-      lat: loc.lat,
-      lon: loc.lon,
-      locationKey: loc.key,
-      countryCode: loc.countryCode,
-    },
-  });
-}
-
-async function handleIpSync(): Promise<void> {
-  const label = ipSyncBtn.querySelector<HTMLElement>('.ip-sync-label')!;
-  const original = label.textContent;
-  const flash = (text: string) => {
-    label.textContent = text;
-    setTimeout(() => { label.textContent = original; }, 2000);
-  };
-  ipSyncBtn.disabled = true;
-  ipSyncBtn.classList.add('is-loading');
-  label.textContent = 'Detecting…';
-  try {
-    const r = await sendMsg<ActionResult>({ type: 'SYNC_TO_IP' });
-    label.textContent = original;
-    if (r?.success) await refresh();
-    else flash(r?.error ?? 'Failed');
-  } catch {
-    flash('Network error');
-  } finally {
-    ipSyncBtn.disabled = false;
-    ipSyncBtn.classList.remove('is-loading');
-  }
-}
-
-async function handleAcceptSync(): Promise<void> {
-  if (!activeSuggestion) return;
-  const suggestion = activeSuggestion;
-  activeSuggestion = null;
-  renderSuggestionBanner(suggestionBanner, null, handleAcceptSync, handleDismissSync);
-  await act({ type: 'ACCEPT_SYNC_SUGGESTION', payload: suggestion });
-}
-
-async function handleDismissSync(): Promise<void> {
-  if (!activeSuggestion) return;
-  const { countryCode } = activeSuggestion;
-  activeSuggestion = null;
-  renderSuggestionBanner(suggestionBanner, null, handleAcceptSync, handleDismissSync);
-  await sendMsg({ type: 'DISMISS_SYNC_SUGGESTION', payload: { countryCode } }).catch(() => {});
-}
-
-async function handleActivateProfile(id: string): Promise<void> {
-  const r = await act({ type: 'ACTIVATE_PROFILE', payload: { id } });
-  if (r?.success) void checkSyncInBackground();
-}
-
-async function handleDeactivateProfile(): Promise<void> {
-  await act({ type: 'DEACTIVATE_PROFILE' });
-}
-
-async function checkSyncInBackground(): Promise<void> {
-  try {
-    const r = await sendMsg<{ suggestion: SyncSuggestion | null }>({ type: 'CHECK_SYNC' });
-    activeSuggestion = r?.suggestion ?? null;
-    renderSuggestionBanner(suggestionBanner, activeSuggestion, handleAcceptSync, handleDismissSync);
-  } catch {
-    // Sync check failed (network) — non-critical, ignore
-  }
-}
-
-document.addEventListener('DOMContentLoaded', async () => {
-  versionText.textContent = `v${chrome.runtime.getManifest().version}`;
-
-  // Wire controls first, so a failed load below can't leave a dead popup.
-  masterToggle.addEventListener('change', handleMasterToggle);
-  ipSyncBtn.addEventListener('click', handleIpSync);
-  citySearch.addEventListener('input', () => {
-    renderCityGrid(cityGrid, citySearch.value, currentState?.geo.locationKey, handleCitySelect);
-  });
-  $<HTMLElement>('#settingsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
-  $<HTMLElement>('#manageProxyBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => globe.draw());
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) refresh().catch(() => {});
-  });
-
-  globe.onDotPosition = (x, y) => {
-    locDot.style.left = `${x}px`;
-    locDot.style.top = `${y}px`;
-  };
-
-  // The map is decoration: load it alongside the state, and never let it block the UI.
-  const [, stateResult] = await Promise.allSettled([
-    globe.loadData(chrome.runtime.getURL('land-110m.json')),
-    refresh(),
-  ]);
-  if (stateResult.status === 'rejected') {
-    locationName.textContent = 'Nomada is starting…';
-    locationCoords.textContent = 'Close and reopen the popup in a moment';
+function renderProxies(s: BgState): void {
+  if (s.profiles.length === 0) {
+    proxyList.innerHTML = `
+      <div class="empty">
+        <span>Add a proxy to travel somewhere else.</span>
+        <button class="primary" type="button" data-action="add">Add proxy</button>
+      </div>`;
     return;
   }
-  if (currentState?.activeProfile && currentState.enabled) void checkSyncInBackground();
+  proxyList.innerHTML = s.profiles.map(p => `
+    <button class="proxy" type="button" role="radio" data-id="${escHtml(p.id)}"
+            aria-checked="${p.id === s.activeProfile?.id}">
+      <span class="proxy-dot" style="background:${safeColor(p.color)}"></span>
+      <span class="proxy-text">
+        <span class="proxy-name">${escHtml(p.name)}</span>
+        <span class="proxy-meta">${escHtml(proxyMeta(p))}</span>
+      </span>
+      <span class="radio" aria-hidden="true"></span>
+    </button>`).join('');
+}
+
+function render(): void {
+  if (!state) return;
+  const s = state;
+  const on = s.enabled && !!s.activeProfile;
+
+  power.checked = on || connecting;
+  power.disabled = s.profiles.length === 0;
+
+  if (connecting) {
+    status.dataset.state = 'connecting';
+    statusText.textContent = `Connecting via ${s.activeProfile?.name ?? 'proxy'}…`;
+    showPlace(s.proxyPlace, 'Locating…');
+  } else if (on && s.protected) {
+    status.dataset.state = 'on';
+    statusText.textContent = `Protected · via ${s.activeProfile!.name}`;
+    showPlace(s.proxyPlace, 'Locating…');
+  } else if (on) {
+    status.dataset.state = 'connecting';
+    statusText.textContent = 'Checking the proxy…';
+    showPlace(s.proxyPlace, 'Locating…');
+  } else {
+    status.dataset.state = 'off';
+    statusText.textContent = 'Your real location';
+    showPlace(s.realPlace, s.realPlace ? '' : 'Locating…');
+  }
+
+  globe.setScene({
+    real: s.realPlace,
+    proxy: s.proxyPlace,
+    active: on && s.protected,
+    connecting: connecting || (on && !s.protected),
+  });
+  renderProxies(s);
+}
+
+// ── Actions ─────────────────────────────────────────────────────────────────
+
+async function refreshState(): Promise<void> {
+  state = await sendMsg<BgState>({ type: 'GET_STATE' });
+  render();
+}
+
+/** Run an action that may take a network round trip, showing progress meanwhile. */
+async function run(msg: BgMessage, showConnecting: boolean): Promise<void> {
+  showNote(null);
+  connecting = showConnecting;
+  render();
+  try {
+    const result = await sendMsg<ActionResult>(msg);
+    if (result && !result.success) showNote(result.error ?? 'Something went wrong');
+  } catch (e) {
+    showNote((e as Error).message);
+  } finally {
+    connecting = false;
+    await refreshState().catch(() => {});
+  }
+}
+
+power.addEventListener('change', () => {
+  if (!state) return;
+  if (state.profiles.length === 0) { chrome.runtime.openOptionsPage(); return; }
+  void run({ type: power.checked ? 'ENABLE' : 'DISABLE' }, power.checked);
 });
+
+proxyList.addEventListener('click', e => {
+  const target = e.target as Element;
+  if (target.closest('[data-action="add"]')) { chrome.runtime.openOptionsPage(); return; }
+  const id = target.closest<HTMLElement>('.proxy')?.dataset.id;
+  if (!id || !state || id === state.activeProfile?.id) return;
+  // Switching while ON reconnects through the new proxy.
+  void run({ type: 'SELECT_PROFILE', payload: { id } }, state.enabled);
+});
+
+$<HTMLButtonElement>('#manage').addEventListener('click', () => chrome.runtime.openOptionsPage());
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => globe.refreshPalette());
+setInterval(tickClock, 1000);
+
+// ── Start ───────────────────────────────────────────────────────────────────
+
+globe.start();
+void globe.loadLand(chrome.runtime.getURL('land-110m.json')).catch(() => {});
+
+(async () => {
+  try {
+    await refreshState();
+  } catch {
+    placeEl.textContent = 'Nomada is starting…';
+    countryEl.textContent = 'Close and reopen in a moment';
+    return;
+  }
+  // Then make sure the location shown is current (it may need a lookup).
+  try {
+    const r = await sendMsg<{ result: ActionResult; state: BgState }>({ type: 'REFRESH_PLACE' });
+    if (r?.result && !r.result.success) showNote(r.result.error ?? null);
+    if (r?.state) { state = r.state; render(); }
+  } catch {
+    // Offline — keep what we have.
+  }
+})();

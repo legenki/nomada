@@ -11,7 +11,15 @@ const ICON_COLOR_RGB: Record<string, [number, number, number]> = {
 };
 
 function hexToRgb(hex: string): [number, number, number] | null {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  const clean = hex.trim().replace(/^#/, '');
+  if (/^[0-9a-f]{3}$/i.test(clean)) {
+    return [
+      parseInt(clean[0] + clean[0], 16),
+      parseInt(clean[1] + clean[1], 16),
+      parseInt(clean[2] + clean[2], 16),
+    ];
+  }
+  const m = /^([0-9a-f]{6})$/i.exec(clean);
   if (!m) return null;
   const n = parseInt(m[1], 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];

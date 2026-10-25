@@ -1,18 +1,19 @@
 import { readData, writeData } from '../lib/storage';
-import { MAX_SYNC_DISMISSED } from '../lib/storage-migration';
-import { countryOfGeo } from '../lib/locations';
-import { hasGeoTarget, isGeoActive } from '../lib/state';
-import { applyProxy, activeProfileOf } from './proxy';
+import { activeProfileOf, isProtected, proxyPlaceOf, selectedProfileOf } from '../lib/state';
+import { applyProxy } from './proxy';
+import { applySpoof } from './spoof';
 import { refreshIcon } from './icon';
-import { ensureGeoOnTab, reapplyGeo, detachAllGeo } from './geolocation';
-import { detectProxyCountry, detectIpLocation, shouldSuggest, parseSyncSuggestion, clearIpCache } from './sync';
-import type { ActionResult, BgMessage, BgState, GeoSettings, SyncSuggestion, WooPortalData } from '../types';
+import { lookupDirectPlace, lookupProxyPlace } from './places';
+import { isFresh, spoofConfigOf } from './state-helpers';
+import type { ActionResult, BgMessage, BgState, WooPortalData } from '../types';
+
+const OK: ActionResult = { success: true };
 
 // ── State transitions ───────────────────────────────────────────────────────
 // Every change goes through commit(): apply a pure update to the latest stored
-// state, persist it, then bring Chrome (proxy, debugger overrides, WebRTC,
-// toolbar icon) in line with whatever actually changed. Commits run one at a
-// time so concurrent messages can't overwrite each other's writes.
+// state, persist it, then bring Chrome (proxy, page spoofing, toolbar icon) in
+// line with whatever actually changed. Commits run one at a time so concurrent
+// messages can't overwrite each other's writes.
 
 let queue: Promise<unknown> = Promise.resolve();
 
@@ -22,86 +23,122 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-function proxyRouteChanged(a: WooPortalData, b: WooPortalData): boolean {
-  return activeProfileOf(a)?.id !== activeProfileOf(b)?.id;
-}
 
-function geoChanged(a: WooPortalData, b: WooPortalData): boolean {
-  return isGeoActive(a) !== isGeoActive(b) || JSON.stringify(a.geo) !== JSON.stringify(b.geo);
-}
-
-interface Reapply { proxy?: boolean; geo?: boolean }
+interface Reapply { proxy?: boolean; spoof?: boolean }
 
 function commit(update: (d: WooPortalData) => WooPortalData, force: Reapply = {}): Promise<ActionResult> {
   return serialize(async () => {
     const prev = await readData();
-    let next = update(prev);
+    const next = update(prev);
     await writeData(next);
 
-    let result: ActionResult = { success: true };
-    if (force.proxy || proxyRouteChanged(prev, next)) {
-      clearIpCache(); // the exit IP changes with the route
+    let result = OK;
+    if (force.proxy || activeProfileOf(prev)?.id !== activeProfileOf(next)?.id) {
       result = await applyProxy(next);
-      if (!result.success && next.mode === 'profile') {
-        // Don't claim a proxy that Chrome refused: fall back and say why.
-        next = { ...next, mode: 'system', activeProfileId: undefined };
-        await writeData(next);
-        await applyProxy(next);
-      }
     }
-    if (force.geo || geoChanged(prev, next)) {
-      if (isGeoActive(next)) await reapplyGeo(next.geo);
-      else await detachAllGeo();
+    const spoof = spoofConfigOf(next);
+    if (force.spoof || JSON.stringify(spoofConfigOf(prev)) !== JSON.stringify(spoof)) {
+      await applySpoof(spoof);
     }
     await refreshIcon();
     return result;
   });
 }
 
-/** Choosing a place or a proxy implies the extension should be ON. */
-function withGeo(geo: GeoSettings) {
-  return (d: WooPortalData): WooPortalData => ({ ...d, enabled: true, geo });
+
+
+// ── Places ──────────────────────────────────────────────────────────────────
+
+/** Look up the user's own location. Only meaningful while no proxy is set. */
+async function refreshRealPlace(force = false): Promise<void> {
+  const data = await readData();
+  if (activeProfileOf(data) || (!force && isFresh(data.realPlace))) return;
+  const place = await lookupDirectPlace();
+  if (place) await commit(d => (activeProfileOf(d) ? d : { ...d, realPlace: place }));
 }
 
-// ── Queries ─────────────────────────────────────────────────────────────────
+/**
+ * Look up the active proxy's exit location and start matching pages to it.
+ * If the proxy can't reach the internet, switch back off rather than leave the
+ * browser stuck behind a dead proxy.
+ */
+async function refreshProxyPlace(force = false): Promise<ActionResult> {
+  const data = await readData();
+  const profile = activeProfileOf(data);
+  if (!profile || (!force && isFresh(proxyPlaceOf(data)))) return OK;
+
+  const place = await lookupProxyPlace(data.realPlace?.ip);
+  if (!place) {
+    if (proxyPlaceOf(data)) {
+      return { success: false, error: `“${profile.name}” location re-check failed` };
+    }
+    await commit(d => (activeProfileOf(d)?.id === profile.id ? { ...d, enabled: false } : d));
+    void refreshRealPlace();
+    return { success: false, error: `“${profile.name}” didn't respond — Nomada stayed off` };
+  }
+  await commit(d => (activeProfileOf(d)?.id === profile.id
+    ? { ...d, proxyPlace: { ...place, profileId: profile.id } }
+    : d));
+  return OK;
+}
+
+// ── Actions ─────────────────────────────────────────────────────────────────
+
+async function enable(): Promise<ActionResult> {
+  const data = await readData();
+  const profileId = selectedProfileOf(data)?.id ?? data.profiles[0]?.id;
+  if (!profileId) return { success: false, error: 'Add a proxy first' };
+  // Know where the user really is before the route changes (for the globe and
+  // to tell a proxied answer from one that slipped past the proxy).
+  if (!data.realPlace) await refreshRealPlace(true);
+
+  const result = await commit(d => ({ ...d, enabled: true, activeProfileId: profileId }));
+  if (!result.success) {
+    await commit(d => ({ ...d, enabled: false }));
+    return result;
+  }
+  return refreshProxyPlace(true);
+}
+
+async function disable(): Promise<ActionResult> {
+  const result = await commit(d => ({ ...d, enabled: false }));
+  void refreshRealPlace();
+  return result;
+}
+
+async function selectProfile(id: string): Promise<ActionResult> {
+  const data = await readData();
+  if (!data.profiles.some(p => p.id === id)) return { success: false, error: 'Profile not found' };
+  const result = await commit(d => ({ ...d, activeProfileId: id }));
+  if (!data.enabled) return result;
+  if (!result.success) {
+    await commit(d => ({ ...d, enabled: false }));
+    return result;
+  }
+  return refreshProxyPlace(true);
+}
+
+async function profilesChanged(): Promise<ActionResult> {
+  // The active profile's host, port or credentials may differ now; a deleted
+  // selection is dropped by readData() (and turns Nomada off).
+  const result = await commit(d => d, { proxy: true });
+  if (!result.success) {
+    await commit(d => ({ ...d, enabled: false }));
+    return result;
+  }
+  return refreshProxyPlace(true);
+}
 
 async function getState(): Promise<BgState> {
   const data = await readData();
   return {
     enabled: data.enabled,
-    mode: data.mode,
     profiles: data.profiles,
-    // The selected profile, even while the master switch is OFF (shown as paused).
-    activeProfile: data.mode === 'profile'
-      ? data.profiles.find(p => p.id === data.activeProfileId) ?? null
-      : null,
-    geo: data.geo,
+    activeProfile: selectedProfileOf(data) ?? null,
+    protected: isProtected(data),
+    realPlace: data.realPlace ?? null,
+    proxyPlace: proxyPlaceOf(data) ?? null,
   };
-}
-
-async function checkSync(): Promise<SyncSuggestion | null> {
-  const data = await readData();
-  if (!activeProfileOf(data) || !data.syncEnabled) return null;
-  const countryCode = await detectProxyCountry();
-  if (countryCode && shouldSuggest(countryCode, countryOfGeo(data.geo), data.syncDismissed)) {
-    return parseSyncSuggestion(countryCode);
-  }
-  return null;
-}
-
-async function syncToIp(): Promise<ActionResult> {
-  clearIpCache(); // always get a fresh reading on explicit user action
-  const ip = await detectIpLocation();
-  if (!ip) return { success: false, error: 'Could not determine IP location' };
-  return commit(withGeo({
-    enabled: true,
-    timezone: ip.timezone,
-    locale: ip.locale,
-    lat: ip.lat,
-    lon: ip.lon,
-    cityName: ip.city,
-    countryCode: ip.countryCode || undefined,
-  }));
 }
 
 // ── Chrome events ───────────────────────────────────────────────────────────
@@ -110,26 +147,20 @@ chrome.proxy.onProxyError.addListener(details => {
   console.error('[Nomada] proxy error:', details.error);
 });
 
-// Chrome can drop extension-controlled settings (reload, disable/enable,
-// update), so re-assert the stored state whenever the browser or extension starts.
-const reconcile = () => { void commit(d => d, { proxy: true, geo: true }); };
-chrome.runtime.onStartup.addListener(reconcile);
-chrome.runtime.onInstalled.addListener(reconcile);
+// Chrome drops session rules, session storage and non-persistent content
+// scripts on restart, and may drop extension settings on reload/update — so
+// re-assert the stored state whenever the browser or extension starts.
+async function reconcile(): Promise<void> {
+  await commit(d => d, { proxy: true, spoof: true });
+  const data = await readData();
+  if (activeProfileOf(data)) await refreshProxyPlace(true);
+  else await refreshRealPlace();
+}
+chrome.runtime.onStartup.addListener(() => { void reconcile(); });
+chrome.runtime.onInstalled.addListener(() => { void reconcile(); });
 
 // Sync the icon whenever the service worker (re)starts.
 void refreshIcon();
-
-async function protectTab(tabId: number): Promise<void> {
-  const data = await readData();
-  if (isGeoActive(data)) await ensureGeoOnTab(tabId, data.geo);
-}
-
-// Attach as early as possible: on tab creation and before each top-level
-// navigation, so a new page's first scripts already see the overrides.
-chrome.tabs.onCreated.addListener(tab => { if (tab.id !== undefined) void protectTab(tab.id); });
-chrome.webNavigation.onBeforeNavigate.addListener(details => {
-  if (details.frameId === 0) void protectTab(details.tabId);
-});
 
 // ── Proxy authentication ────────────────────────────────────────────────────
 
@@ -170,43 +201,19 @@ async function handle(msg: BgMessage): Promise<unknown> {
   switch (msg.type) {
     case 'GET_STATE':
       return getState();
-    case 'CHECK_SYNC':
-      return { suggestion: await checkSync() };
-    case 'SYNC_TO_IP':
-      return syncToIp();
-    case 'ENABLE_ALL':
-      return commit(d => ({ ...d, enabled: true, geo: { ...d.geo, enabled: hasGeoTarget(d.geo) } }));
-    case 'DISABLE_ALL':
-      return commit(d => ({ ...d, enabled: false }));
-    case 'ACTIVATE_PROFILE':
-      return commit(d => ({ ...d, enabled: true, mode: 'profile', activeProfileId: msg.payload.id }));
-    case 'DEACTIVATE_PROFILE':
-      return commit(d => ({ ...d, mode: 'system', activeProfileId: undefined }));
+    case 'REFRESH_PLACE': {
+      const data = await readData();
+      const result = activeProfileOf(data) ? await refreshProxyPlace() : (await refreshRealPlace(), OK);
+      return { result, state: await getState() };
+    }
+    case 'ENABLE':
+      return enable();
+    case 'DISABLE':
+      return disable();
+    case 'SELECT_PROFILE':
+      return selectProfile(msg.payload.id);
     case 'PROFILES_CHANGED':
-      // The options page edited/deleted profiles: the active one's host, port or
-      // credentials may differ now (readData already drops a deleted active profile).
-      return commit(d => d, { proxy: true });
-    case 'SET_GEO':
-      return commit(withGeo({ ...msg.payload, enabled: true }));
-    case 'ACCEPT_SYNC_SUGGESTION': {
-      const s = msg.payload;
-      return commit(withGeo({
-        enabled: true,
-        timezone: s.timezone,
-        locale: s.locale,
-        lat: s.lat,
-        lon: s.lon,
-        locationKey: s.locationKey,
-        countryCode: s.countryCode,
-      }));
-    }
-    case 'DISMISS_SYNC_SUGGESTION': {
-      const cc = msg.payload.countryCode.toUpperCase();
-      return commit(d => ({
-        ...d,
-        syncDismissed: [...d.syncDismissed.filter(c => c !== cc), cc].slice(-MAX_SYNC_DISMISSED),
-      }));
-    }
+      return profilesChanged();
   }
 }
 

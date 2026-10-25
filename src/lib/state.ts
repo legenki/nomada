@@ -1,11 +1,21 @@
-import type { GeoSettings, WooPortalData } from '../types';
+import type { ProxyPlace, ProxyProfile, WooPortalData } from '../types';
 
-/** True when the geo settings name an actual place to emulate. */
-export function hasGeoTarget(geo: GeoSettings): boolean {
-  return !!(geo.timezone || geo.locale || (geo.lat !== undefined && geo.lon !== undefined));
+export function selectedProfileOf(data: Pick<WooPortalData, 'profiles' | 'activeProfileId'>): ProxyProfile | undefined {
+  return data.activeProfileId ? data.profiles.find(p => p.id === data.activeProfileId) : undefined;
 }
 
-/** Location spoofing is live: master switch ON, geo enabled and a place chosen. */
-export function isGeoActive(data: Pick<WooPortalData, 'enabled' | 'geo'>): boolean {
-  return data.enabled && data.geo.enabled && hasGeoTarget(data.geo);
+/** The profile carrying traffic right now (master switch ON + a valid selection). */
+export function activeProfileOf(data: WooPortalData): ProxyProfile | undefined {
+  return data.enabled ? selectedProfileOf(data) : undefined;
+}
+
+/** The proxy's exit location, if it belongs to the selected profile. */
+export function proxyPlaceOf(data: WooPortalData): ProxyPlace | undefined {
+  const p = data.proxyPlace;
+  return p && p.profileId === data.activeProfileId ? p : undefined;
+}
+
+/** Traffic is proxied and the page identity has been matched to the proxy's location. */
+export function isProtected(data: WooPortalData): boolean {
+  return !!activeProfileOf(data) && !!proxyPlaceOf(data);
 }

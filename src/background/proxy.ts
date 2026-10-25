@@ -1,4 +1,5 @@
 import type { ActionResult, ProxyProfile, WooPortalData } from '../types';
+import { activeProfileOf } from '../lib/state';
 
 function generatePAC(profile: ProxyProfile): string {
   const { type, host, port } = profile.config;
@@ -35,11 +36,6 @@ export function buildProxyConfig(profile: ProxyProfile): chrome.proxy.ProxyConfi
     return { mode: 'pac_script', pacScript: { data: generatePAC(profile) } };
   }
   return { mode: 'fixed_servers', rules: { singleProxy: { scheme: type, host, port } } };
-}
-
-export function activeProfileOf(data: WooPortalData): ProxyProfile | undefined {
-  if (!data.enabled || data.mode !== 'profile' || !data.activeProfileId) return undefined;
-  return data.profiles.find(p => p.id === data.activeProfileId);
 }
 
 /**

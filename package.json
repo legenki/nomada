@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm run typecheck && npm run build:background && npm run build:popup && npm run build:options",
+    "build": "npm run typecheck && npm run build:background && npm run build:content && npm run build:popup && npm run build:options",
     "build:background": "vite build --config vite.config.background.ts",
+    "build:content": "vite build -c vite.config.content.ts --mode spoof-main && vite build -c vite.config.content.ts --mode spoof-bridge",
     "build:popup": "vite build --config vite.config.popup.ts",
     "build:options": "vite build --config vite.config.options.ts",
     "dev:popup": "vite build --config vite.config.popup.ts --watch",

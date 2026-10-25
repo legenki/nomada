@@ -2,15 +2,14 @@
   "manifest_version": 3,
   "name": "Nomada — Location Guard, Locale & Proxy",
   "version": "1.0.0",
-  "description": "Change your location, timezone, locale & proxy in one click. Keep them in sync so sites see one consistent place.",
+  "description": "Route your browser through a proxy and match its location, timezone and language — so sites see one consistent place.",
   "minimum_chrome_version": "110",
   "permissions": [
     "proxy",
     "storage",
-    "debugger",
     "scripting",
     "privacy",
-    "webNavigation",
+    "declarativeNetRequestWithHostAccess",
     "webRequest",
     "webRequestAuthProvider"
   ],
