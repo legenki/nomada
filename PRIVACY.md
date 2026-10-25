@@ -2,8 +2,9 @@
 
 _Last updated: 2026-10-22_
 
-Nomada ("the extension") is a browser extension that lets you change your
-browser's reported geolocation, timezone, locale, and proxy settings. This
+Nomada ("the extension") is a browser extension that routes your browser
+through a proxy you configure and matches your browser's reported geolocation,
+timezone and language to that proxy's location. This
 policy explains what data the extension handles and how.
 
 ## Summary
@@ -18,31 +19,33 @@ The extension saves the following on your device using the browser's local
 storage (`chrome.storage.local`). This data never leaves your browser except as
 described under "Network requests" below:
 
-- Your chosen location (city, latitude, longitude, timezone, locale)
-- Whether the extension is enabled
 - Your proxy profiles, including any proxy username and password you enter
-- Your preferences (e.g. dismissed sync suggestions)
+- Which profile is selected and whether Nomada is on
+- The last looked-up location of your own IP and of the proxy's exit IP
+  (city, country, coordinates, timezone, IP address), so the popup can show them
 
 Proxy credentials are stored locally only so the extension can authenticate to
-the proxy you configured. They are never sent anywhere except to that proxy
-server, by your own browser, as part of normal proxy authentication.
+the proxy you configured. They are sent only to that proxy server, by your own
+browser, as part of normal proxy authentication.
+
+While Nomada is on, the proxy's timezone, language and coordinates are also kept
+in the browser's session storage so pages can be shown them; this is cleared
+when Nomada is turned off or the browser closes.
 
 ## Network requests
 
 Nomada contacts one service, **ipwho.is** (`https://ipwho.is`), to look up the
-approximate location (country, city, coordinates, timezone) of the IP address
-your traffic currently exits from — your proxy's IP when a proxy is active. It
-does so in two cases:
+approximate location (country, city, coordinates, timezone) of an IP address:
 
-- **"Use my IP location"** — when you click this button.
-- **Proxy sync suggestions** — automatically when you open the popup while a
-  proxy profile is active, at most once every 10 minutes, to offer matching your
-  location to the proxy's country. You can dismiss a suggestion; the countries
-  you dismissed are stored locally.
+- **Your own IP** — when you open the popup while Nomada is off, at most once
+  every 10 minutes, to show where you are.
+- **The proxy's exit IP** — when you switch Nomada on or change proxies, and when
+  you open the popup while it's on (at most once every 10 minutes), to match
+  your browser to the proxy's location.
 
 Nomada sends nothing in these requests beyond what any HTTP request carries
-(your exit IP, as seen by ipwho.is). See ipwho.is's own privacy terms for how
-they handle it.
+(the IP the request comes from, as seen by ipwho.is). See ipwho.is's own privacy
+terms for how they handle it.
 
 No other analytics, telemetry, or tracking requests are made by the extension.
 
@@ -52,17 +55,17 @@ Nomada requests browser permissions only to provide its features:
 
 - **proxy** — route your traffic through a proxy you configure
 - **storage** — save your settings locally
-- **debugger** — override geolocation, timezone, locale and the browser
-  language (the only browser API able to do this per tab)
-- **scripting** — run the IP lookup inside your active tab, so it leaves through
-  the same proxy as your pages (in an isolated context pages can't see)
+- **scripting** — while Nomada is on, add a script to pages that makes them see
+  the proxy's timezone, language and location; and run the IP lookup inside
+  your active tab so it leaves through the same proxy as your pages
+- **declarativeNetRequest** — set the language your browser announces to sites
+  (the Accept-Language header) to the proxy country's language
 - **privacy** — while a proxy is active, stop WebRTC from revealing your real
   IP outside the proxy
-- **webNavigation** — re-apply your location override when you navigate
 - **webRequest / webRequestAuthProvider** — supply credentials to the
   authenticated proxy you configured
-- **host access to all sites** — your location and proxy settings must apply to
-  every site you visit
+- **host access to all sites** — the proxy's location, timezone and language
+  must apply to every site you visit
 
 ## Data sharing
 
