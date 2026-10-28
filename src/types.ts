@@ -81,6 +81,21 @@ export interface ActionResult {
   error?: string;
 }
 
+/** A proxy server to test before saving it. */
+export interface ProbeTarget {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+}
+
+export interface DetectResult extends ActionResult {
+  /** The type that carried the test request. */
+  type?: Exclude<ProxyConfig['type'], 'pac'>;
+  /** Where the proxy's exit IP is. */
+  place?: Place;
+}
+
 // Messages between popup/options and background
 export type BgMessage =
   | { type: 'GET_STATE' }
@@ -88,7 +103,8 @@ export type BgMessage =
   | { type: 'ENABLE' }
   | { type: 'DISABLE' }
   | { type: 'SELECT_PROFILE'; payload: { id: string } }
-  | { type: 'PROFILES_CHANGED' };
+  | { type: 'PROFILES_CHANGED' }
+  | { type: 'DETECT_PROXY'; payload: ProbeTarget };
 
 export interface BgState {
   enabled: boolean;

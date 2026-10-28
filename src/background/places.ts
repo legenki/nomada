@@ -2,7 +2,8 @@ import type { Place } from '../types';
 import { localeForCountry } from '../lib/country-locales';
 
 // ipwho.is: free, HTTPS, no API key, CORS-enabled.
-const LOOKUP_URL = 'https://ipwho.is/';
+export const LOOKUP_HOST = 'ipwho.is';
+const LOOKUP_URL = `https://${LOOKUP_HOST}/`;
 const TIMEOUT_MS = 6000;
 
 /** Raw ipwho.is response (subset we use). */
@@ -42,14 +43,22 @@ function userLanguage(): string {
   return navigator.language.split('-')[0];
 }
 
-/** Lookup from the service worker: follows the browser-wide proxy setting. */
-async function lookupFromWorker(): Promise<Place | null> {
+/**
+ * Lookup from the service worker: follows the browser-wide proxy setting.
+ * Tells a request nobody answered ('timeout') from one that failed (null).
+ */
+export async function probeLookup(): Promise<Place | 'timeout' | null> {
   try {
     const res = await fetch(lookupUrl(), { cache: 'no-store', signal: AbortSignal.timeout(TIMEOUT_MS) });
     return toPlace(await res.json() as IpWhoResponse, userLanguage());
-  } catch {
-    return null;
+  } catch (e) {
+    return (e as Error).name === 'TimeoutError' ? 'timeout' : null;
   }
+}
+
+async function lookupFromWorker(): Promise<Place | null> {
+  const place = await probeLookup();
+  return place === 'timeout' ? null : place;
 }
 
 /**

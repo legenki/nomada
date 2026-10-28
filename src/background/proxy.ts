@@ -1,16 +1,30 @@
-import type { ActionResult, ProxyProfile, WooPortalData } from '../types';
+import type { ActionResult, ProxyConfig, ProxyProfile, WooPortalData } from '../types';
 import { activeProfileOf } from '../lib/state';
 
-function generatePAC(profile: ProxyProfile): string {
-  const { type, host, port } = profile.config;
-  const { domains, mode } = profile.config.routingRules;
+/** A PAC route to one proxy server, e.g. `PROXY host:port`. */
+export function pacRoute(type: Exclude<ProxyConfig['type'], 'pac'>, host: string, port: number): string {
+  return `${type === 'socks5' ? 'SOCKS5' : type === 'https' ? 'HTTPS' : 'PROXY'} ${host}:${port}`;
+}
+
+/**
+ * The body of `FindProxyForURL(url, host)` that routes the way `profile` does,
+ * or null for a remote PAC script, whose logic can't be inlined.
+ */
+export function routeBody(profile: ProxyProfile): string | null {
+  const { type, host, port, routingRules } = profile.config;
+  if (type === 'pac') return null;
   // JSON.stringify quotes/escapes values so user input can't break out of the PAC source.
-  const proxyStr = JSON.stringify(`${type === 'socks5' ? 'SOCKS5' : 'PROXY'} ${host}:${port}`);
-  const list = JSON.stringify(domains);
-  if ((mode ?? 'whitelist') === 'whitelist') {
-    return `function FindProxyForURL(url,host){var w=${list};for(var i=0;i<w.length;i++){if(shExpMatch(host,w[i]))return ${proxyStr};}return "DIRECT";}`;
+  const proxyStr = JSON.stringify(pacRoute(type, host, port));
+  if (!routingRules?.enabled || routingRules.domains.length === 0) return `return ${proxyStr};`;
+  const list = JSON.stringify(routingRules.domains);
+  if ((routingRules.mode ?? 'whitelist') === 'whitelist') {
+    return `var w=${list};for(var i=0;i<w.length;i++){if(shExpMatch(host,w[i]))return ${proxyStr};}return "DIRECT";`;
   }
-  return `function FindProxyForURL(url,host){var b=${list};for(var i=0;i<b.length;i++){if(shExpMatch(host,b[i]))return "DIRECT";}return ${proxyStr};}`;
+  return `var b=${list};for(var i=0;i<b.length;i++){if(shExpMatch(host,b[i]))return "DIRECT";}return ${proxyStr};`;
+}
+
+function generatePAC(profile: ProxyProfile): string {
+  return `function FindProxyForURL(url,host){${routeBody(profile)}}`;
 }
 
 function toPacUrl(input: string): string | null {

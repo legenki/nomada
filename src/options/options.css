@@ -247,7 +247,7 @@ legend { margin-bottom: 6px; }
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 2px;
   padding: 3px;
   border-radius: 11px;
@@ -293,6 +293,19 @@ legend { margin-bottom: 6px; }
 .swatch.custom input:checked + span { background: var(--c); }
 /* The colour picker sits on top so a click opens it; the radio stays reachable by keyboard. */
 .swatch.custom input[type="color"] { z-index: 1; border: 0; padding: 0; }
+
+fieldset.field .hint, fieldset.field .error { margin-top: 6px; }
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  margin-left: -4px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .dialog-foot { display: flex; align-items: center; gap: 8px; padding-top: 4px; }
 .spacer { flex: 1; }

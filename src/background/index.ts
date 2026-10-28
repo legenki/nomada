@@ -4,6 +4,7 @@ import { applyProxy } from './proxy';
 import { applySpoof } from './spoof';
 import { refreshIcon } from './icon';
 import { lookupDirectPlace, lookupProxyPlace } from './places';
+import { answerProbeChallenge, detectProxyType, noteProxyError } from './detect';
 import { isFresh, spoofConfigOf } from './state-helpers';
 import type { ActionResult, BgMessage, BgState, WooPortalData } from '../types';
 
@@ -21,6 +22,14 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
   const run = queue.catch(() => {}).then(fn);
   queue = run;
   return run;
+}
+
+/**
+ * Resolves once queued work is done. Location lookups wait for it: while a
+ * proxy check runs, a lookup would go out through the proxy being checked.
+ */
+function whenIdle(): Promise<void> {
+  return queue.then(() => {}, () => {});
 }
 
 
@@ -51,6 +60,7 @@ function commit(update: (d: WooPortalData) => WooPortalData, force: Reapply = {}
 
 /** Look up the user's own location. Only meaningful while no proxy is set. */
 async function refreshRealPlace(force = false): Promise<void> {
+  await whenIdle();
   const data = await readData();
   if (activeProfileOf(data) || (!force && isFresh(data.realPlace))) return;
   const place = await lookupDirectPlace();
@@ -63,6 +73,7 @@ async function refreshRealPlace(force = false): Promise<void> {
  * browser stuck behind a dead proxy.
  */
 async function refreshProxyPlace(force = false): Promise<ActionResult> {
+  await whenIdle();
   const data = await readData();
   const profile = activeProfileOf(data);
   if (!profile || (!force && isFresh(proxyPlaceOf(data)))) return OK;
@@ -144,6 +155,7 @@ async function getState(): Promise<BgState> {
 // ── Chrome events ───────────────────────────────────────────────────────────
 
 chrome.proxy.onProxyError.addListener(details => {
+  noteProxyError(details.error);
   console.error('[Nomada] proxy error:', details.error);
 });
 
@@ -174,6 +186,8 @@ chrome.webRequest.onErrorOccurred.addListener(forgetAuth, { urls: ['<all_urls>']
 chrome.webRequest.onAuthRequired.addListener(
   (details, callback) => {
     if (!details.isProxy) { callback!({}); return; }
+    const probeAnswer = answerProbeChallenge(details.challenger?.host);
+    if (probeAnswer) { callback!(probeAnswer); return; }
     if (answeredAuth.has(details.requestId)) { callback!({ cancel: true }); return; }
     readData().then(data => {
       const profile = activeProfileOf(data);
@@ -214,6 +228,8 @@ async function handle(msg: BgMessage): Promise<unknown> {
       return selectProfile(msg.payload.id);
     case 'PROFILES_CHANGED':
       return profilesChanged();
+    case 'DETECT_PROXY':
+      return serialize(async () => detectProxyType(msg.payload, await readData()));
   }
 }
 

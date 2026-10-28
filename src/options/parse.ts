@@ -4,7 +4,8 @@ type ServerType = Exclude<ProxyConfig['type'], 'pac'>;
 
 export type ParsedProxy =
   | { type: 'pac'; pacUrl: string }
-  | { type: ServerType; host: string; port: number; username: string; password: string };
+  /** `type` is null when the text doesn't name a scheme. */
+  | { type: ServerType | null; host: string; port: number; username: string; password: string };
 
 interface Candidate { host: string; port: string; username: string; password: string }
 
@@ -42,42 +43,41 @@ function candidate(address: string, credentials: string): Candidate {
  * than one way. Keep the readings with a valid host and port, preferring one
  * whose host looks like a real host over e.g. a user name.
  */
-function pick(type: ServerType, candidates: Candidate[]): ParsedProxy | null {
+function pick(type: ServerType | null, candidates: Candidate[]): ParsedProxy | null {
   const valid = candidates.filter(c => HOST.test(c.host) && toPort(c.port));
   const c = valid.find(c => c.host.includes('.') || c.host.toLowerCase() === 'localhost') ?? valid[0];
   return c ? { type, host: c.host, port: toPort(c.port)!, username: c.username, password: c.password } : null;
 }
 
 /** user:pass@host:port, host:port@user:pass, host:port, host:port:user:pass, user:pass:host:port */
-function parseBare(s: string, type: ServerType): ParsedProxy | null {
+function parseBare(s: string): ParsedProxy | null {
   if (s.includes('@')) {
     const last = s.lastIndexOf('@');
     const first = s.indexOf('@');
-    return pick(type, [
+    return pick(null, [
       candidate(s.slice(last + 1), s.slice(0, last)),
       candidate(s.slice(0, first), s.slice(first + 1)),
     ]);
   }
   const parts = s.split(':');
-  if (parts.length === 2) return pick(type, [candidate(s, '')]);
+  if (parts.length === 2) return pick(null, [candidate(s, '')]);
   if (parts.length < 4) return null;
   const [a, b, c, ...rest] = parts;
   const candidates = [{ host: a, port: b, username: c, password: rest.join(':') }];
   if (parts.length === 4) candidates.push({ host: c, port: rest[0], username: a, password: b });
-  return pick(type, candidates);
+  return pick(null, candidates);
 }
 
 /**
  * Reads a proxy written as one line — a URL (`socks5://user:pass@host:port`),
  * a PAC script URL, or one of the colon/@ formats proxy sellers hand out.
- * `fallbackType` is used when the text doesn't name a scheme.
  */
-export function parseProxyString(text: string, fallbackType: ProxyConfig['type']): ParsedProxy | null {
+export function parseProxyString(text: string): ParsedProxy | null {
   const s = text.trim();
   if (!s || /\s/.test(s)) return null;
 
   const url = /^([a-z][a-z0-9+.-]*):\/\/(.*)$/i.exec(s);
-  if (!url) return parseBare(s, fallbackType === 'pac' ? 'http' : fallbackType);
+  if (!url) return parseBare(s);
 
   const scheme = url[1].toLowerCase();
   const rest = url[2];

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildProxyConfig } from '../src/background/proxy';
+import { buildProxyConfig, pacRoute, routeBody } from '../src/background/proxy';
 import type { ProxyProfile } from '../src/types';
 
 function profile(config: Partial<ProxyProfile['config']> = {}): ProxyProfile {
@@ -43,5 +43,33 @@ describe('buildProxyConfig', () => {
     const data = cfg.pacScript!.data!;
     expect(data).toContain('"PROXY evil\\";alert(1);\\":3128"');
     expect(() => new Function(data)).not.toThrow();
+  });
+});
+
+describe('pacRoute / routeBody', () => {
+  it('uses the PAC keyword for each proxy type', () => {
+    expect(pacRoute('http', 'h', 1)).toBe('PROXY h:1');
+    expect(pacRoute('https', 'h', 2)).toBe('HTTPS h:2');
+    expect(pacRoute('socks5', 'h', 3)).toBe('SOCKS5 h:3');
+  });
+
+  it('routes a plain profile straight to its proxy', () => {
+    expect(routeBody(profile({ type: 'socks5', port: 1080 }))).toBe('return "SOCKS5 proxy.example:1080";');
+  });
+
+  it('keeps routing rules, with the right keyword for HTTPS proxies', () => {
+    const body = routeBody(profile({
+      type: 'https',
+      routingRules: { enabled: true, mode: 'blacklist', domains: ['*.local'] },
+    }))!;
+    const find = new Function('shExpMatch', `return function(url,host){${body}}`)(
+      (h: string, p: string) => p === '*.local' && h.endsWith('.local'),
+    );
+    expect(find('https://a.local/', 'a.local')).toBe('DIRECT');
+    expect(find('https://example.com/', 'example.com')).toBe('HTTPS proxy.example:3128');
+  });
+
+  it('has no inline route for a remote PAC script', () => {
+    expect(routeBody(profile({ type: 'pac', pacUrl: 'https://example.com/p.pac' }))).toBeNull();
   });
 });

@@ -42,6 +42,8 @@ approximate location (country, city, coordinates, timezone) of an IP address:
 - **The proxy's exit IP** — when you switch Nomada on or change proxies, and when
   you open the popup while it's on (at most once every 10 minutes), to match
   your browser to the proxy's location.
+- **A proxy you save with the "Auto" type** — once per type tried, through that
+  proxy only, to find out which proxy type it speaks and where it exits.
 
 Nomada sends nothing in these requests beyond what any HTTP request carries
 (the IP the request comes from, as seen by ipwho.is). See ipwho.is's own privacy

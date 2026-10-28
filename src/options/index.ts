@@ -1,11 +1,14 @@
 import { readData, updateProfiles } from '../lib/storage';
 import { isProtected, proxyPlaceOf, selectedProfileOf } from '../lib/state';
 import { escHtml, safeColor } from '../lib/html';
-import type { ActionResult, BgMessage, ProxyConfig, ProxyProfile, WooPortalData } from '../types';
+import type { ActionResult, BgMessage, DetectResult, ProxyConfig, ProxyProfile, WooPortalData } from '../types';
 import { parseProxyString } from './parse';
 import { validateProfile, type ValidationError } from './validate';
 
 type ProxyType = ProxyConfig['type'];
+/** 'auto' finds the type on save. */
+type FormType = ProxyType | 'auto';
+type FormField = ValidationError['field'] | 'type';
 
 const PRESET_COLORS: [hex: string, name: string][] = [
   ['#16a34a', 'Green'], ['#2563eb', 'Blue'], ['#7c3aed', 'Violet'], ['#db2777', 'Pink'],
@@ -46,8 +49,9 @@ const f = {
   name:        byId<HTMLInputElement>('fName'),
   customColor: byId<HTMLInputElement>('fCustomColor'),
 };
-const INPUT_FOR: Record<ValidationError['field'], HTMLInputElement> = {
+const INPUT_FOR: Record<FormField, HTMLInputElement> = {
   host: f.host, port: f.port, pacUrl: f.pacUrl, username: f.username,
+  type: form.querySelector<HTMLInputElement>('input[name="type"][value="auto"]')!,
 };
 const radios = (name: 'type' | 'color') => form.elements.namedItem(name) as RadioNodeList;
 
@@ -56,14 +60,15 @@ const radios = (name: 'type' | 'color') => form.elements.namedItem(name) as Radi
 let data: WooPortalData | null = null;
 let editingId: string | null = null;
 
-/** Tell the background so an edited/deleted active profile is re-applied to Chrome. */
-function notifyProfilesChanged(): Promise<ActionResult | undefined> {
-  const msg: BgMessage = { type: 'PROFILES_CHANGED' };
+function send<T>(msg: BgMessage): Promise<T | undefined> {
   return new Promise(resolve => chrome.runtime.sendMessage(msg, r => {
     void chrome.runtime.lastError;
-    resolve(r as ActionResult | undefined);
+    resolve(r as T | undefined);
   }));
 }
+
+/** Tell the background so an edited/deleted active profile is re-applied to Chrome. */
+const notifyProfilesChanged = () => send<ActionResult>({ type: 'PROFILES_CHANGED' });
 
 // ── List ────────────────────────────────────────────────────────────────────
 
@@ -124,9 +129,9 @@ async function load(): Promise<void> {
 
 // ── Dialog ──────────────────────────────────────────────────────────────────
 
-const currentType = () => radios('type').value as ProxyType;
+const currentType = () => radios('type').value as FormType;
 
-function setType(type: ProxyType): void {
+function setType(type: FormType): void {
   radios('type').value = type;
   updateTypeFields();
 }
@@ -138,6 +143,7 @@ function updateTypeFields(): void {
   // Chrome can't answer a SOCKS5 auth challenge, so credentials are never saved for it.
   byId('authRow').hidden = type === 'socks5';
   byId('socksNote').hidden = type !== 'socks5';
+  byId('autoHint').hidden = type !== 'auto';
   updateNamePlaceholder();
 }
 
@@ -148,7 +154,8 @@ function fallbackName(): string {
 }
 
 function updateNamePlaceholder(): void {
-  f.name.placeholder = fallbackName() || 'My proxy';
+  // Auto names the proxy after its exit city, found on save.
+  f.name.placeholder = currentType() === 'auto' ? 'City of the exit IP' : fallbackName() || 'My proxy';
 }
 
 function setCustomColor(color: string): void {
@@ -181,7 +188,7 @@ function clearErrors(): void {
   }
 }
 
-function showError(error: ValidationError): void {
+function showError(error: { field: FormField; message: string }): void {
   clearErrors();
   const message = form.querySelector<HTMLElement>(`[data-error-for="${error.field}"]`)!;
   message.id = `${error.field}Error`;
@@ -206,7 +213,7 @@ function showPasteHint(text: string, kind: 'ok' | 'error'): void {
 function applyPaste(final: boolean): boolean {
   const text = f.paste.value;
   if (!text.trim()) { pasteHint.hidden = true; return false; }
-  const parsed = parseProxyString(text, currentType());
+  const parsed = parseProxyString(text);
   if (!parsed) {
     if (final) showPasteHint("Couldn't read that. Try host:port, host:port:user:pass or socks5://host:port", 'error');
     else pasteHint.hidden = true;
@@ -216,7 +223,10 @@ function applyPaste(final: boolean): boolean {
     showPasteHint("Chrome can't sign in to SOCKS5 proxies, so one that needs a username and password won't work.", 'error');
     return false;
   }
-  setType(parsed.type);
+  // Without a scheme the text doesn't say the type: keep the chosen one when it fits.
+  const current = currentType();
+  const keep = current !== 'pac' && !(current === 'socks5' && parsed.type !== 'pac' && parsed.username);
+  setType(parsed.type ?? (keep ? current : 'auto'));
   if (parsed.type === 'pac') {
     f.pacUrl.value = parsed.pacUrl;
   } else {
@@ -229,11 +239,13 @@ function applyPaste(final: boolean): boolean {
   clearErrors();
   showPasteHint(parsed.type === 'pac'
     ? 'Filled in a PAC script'
-    : `Filled in ${parsed.type.toUpperCase()} ${parsed.host}:${parsed.port}${parsed.username ? ' with a login' : ''}`, 'ok');
+    : `Filled in ${parsed.type ? `${parsed.type.toUpperCase()} ` : ''}${parsed.host}:${parsed.port}${parsed.username ? ' with a login' : ''}`, 'ok');
   return true;
 }
 
 let deleteTimer: number | undefined;
+// Bumped on every open, so a slow save can tell the dialog it started in is gone.
+let dialogSession = 0;
 
 function resetDelete(): void {
   clearTimeout(deleteTimer);
@@ -245,6 +257,7 @@ function openDialog(id?: string): void {
   const profile = id ? data?.profiles.find(p => p.id === id) : undefined;
   if (id && !profile) return;
   editingId = profile?.id ?? null;
+  dialogSession++;
 
   form.reset();
   clearErrors();
@@ -255,7 +268,7 @@ function openDialog(id?: string): void {
   deleteBtn.hidden = !profile;
 
   const c = profile?.config;
-  setType(c?.type ?? 'http');
+  setType(c?.type ?? 'auto');
   f.host.value = c?.host ?? '';
   f.port.value = c && c.type !== 'pac' ? String(c.port) : '';
   f.pacUrl.value = c?.pacUrl ?? '';
@@ -289,30 +302,58 @@ async function applyChanges(): Promise<void> {
 
 let saving = false;
 
+function setChecking(on: boolean): void {
+  saveBtn.innerHTML = on ? '<span class="spinner" aria-hidden="true"></span>Checking…' : 'Save';
+  form.setAttribute('aria-busy', String(on));
+}
+
+/** Ask the background which type the proxy speaks (the Auto type). */
+async function detectType(host: string, port: number, auth: ProxyProfile['config']['auth']): Promise<DetectResult> {
+  setChecking(true);
+  try {
+    return await send<DetectResult>({ type: 'DETECT_PROXY', payload: { host, port, ...auth } })
+      ?? { success: false, error: "Nomada didn't respond. Try again in a moment." };
+  } finally {
+    setChecking(false);
+  }
+}
+
 async function saveProfile(): Promise<void> {
   if (saving) return;
-  const type = currentType();
-  const isPac = type === 'pac';
+  const formType = currentType();
   const host = f.host.value.trim();
   const portText = f.port.value.trim();
   const port = portText ? Number(portText) : NaN;
   const pacUrl = f.pacUrl.value.trim();
-  const auth = type === 'socks5'
+  const auth = formType === 'socks5'
     ? { username: '', password: '' }
     : { username: f.username.value, password: f.password.value };
-  const error = validateProfile(type, host, port, pacUrl, auth.username);
+  // Auto needs a host and port like any proxy server.
+  const error = validateProfile(formType === 'auto' ? 'http' : formType, host, port, pacUrl, auth.username);
   if (error) { showError(error); return; }
 
+  const session = dialogSession;
+  const editing = editingId;
   saving = true;
   saveBtn.disabled = true;
   try {
-    const id = editingId ?? generateId();
+    let type: ProxyType = formType === 'auto' ? 'http' : formType;
+    let found: DetectResult | undefined;
+    if (formType === 'auto') {
+      found = await detectType(host, port, auth);
+      if (session !== dialogSession || !dialog.open) return; // closed while checking
+      if (!found.success || !found.type) { showError({ field: 'type', message: found.error ?? "Couldn't check the proxy" }); return; }
+      type = found.type;
+    }
+
+    const isPac = type === 'pac';
+    const id = editing ?? generateId();
     const now = new Date().toISOString();
     const latest = (await readData()).profiles;
     const existing = latest.find(p => p.id === id);
     const profile: ProxyProfile = {
       id,
-      name: f.name.value.trim() || fallbackName(),
+      name: f.name.value.trim() || found?.place?.city || fallbackName(),
       description: existing?.description ?? '',
       color: safeColor(currentColor()),
       config: {
@@ -333,7 +374,8 @@ async function saveProfile(): Promise<void> {
     data = await updateProfiles(next);
     renderList();
     dialog.close();
-    toast(existing ? 'Saved' : `Added “${profile.name}”`);
+    const where = found?.place ? ` · ${type.toUpperCase()} · ${[found.place.city, found.place.country].filter(Boolean).join(', ')}` : '';
+    toast(`${existing ? 'Saved' : `Added “${profile.name}”`}${where}`);
     await applyChanges();
   } finally {
     saving = false;
