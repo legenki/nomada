@@ -1,19 +1,8 @@
 /* Nomada popup — minimal, light/dark. */
 
-:root {
-  --bg: #fbfbfc;
-  --surface: #ffffff;
-  --surface-2: #f2f4f7;
-  --line: #e6e8ec;
-  --text: #15181d;
-  --text-2: #5d6673;
-  --text-3: #8b939e;
-  --accent: #16a34a;
-  --accent-soft: rgba(22, 163, 74, 0.12);
-  --warn: #b42318;
-  --warn-soft: #fdecea;
-  --focus: #2563eb;
+@import '../styles/tokens.css';
 
+:root {
   --globe-dot: #6b7684;
   --globe-sphere: #f4f6f9;
   --globe-sphere-edge: #e1e6ec;
@@ -21,27 +10,10 @@
   --globe-glow-on: rgba(22, 163, 74, 0.22);
   --globe-accent: #16a34a;
   --globe-muted: #8b939e;
-
-  --radius: 14px;
-  --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", system-ui, sans-serif;
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0e1013;
-    --surface: #16191e;
-    --surface-2: #1d2127;
-    --line: #262b32;
-    --text: #eef0f3;
-    --text-2: #a3abb6;
-    --text-3: #6f7883;
-    --accent: #34d399;
-    --accent-soft: rgba(52, 211, 153, 0.14);
-    --warn: #fca5a5;
-    --warn-soft: rgba(248, 113, 113, 0.12);
-    --focus: #60a5fa;
-
     --globe-dot: #9aa6b4;
     --globe-sphere: #1a1e24;
     --globe-sphere-edge: #121418;

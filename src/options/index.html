@@ -2,66 +2,122 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nomada — Settings</title>
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
-  <div class="options-wrap">
-    <header class="options-header">
-      <div class="logo">Nomada</div>
-      <span id="saveStatus"></span>
+  <div class="page">
+    <header class="bar">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M 14.474609 1.9746094 A 1.5 1.5 0 1 0 14.474609 4.9746094 A 1.5 1.5 0 1 0 14.474609 1.9746094 z M 11.759766 2.0117188 C 9.2547656 2.0717188 6.9798594 3.0576719 5.2558594 4.6386719 C 5.9088594 4.8836719 6.4689062 5.3103281 6.8789062 5.8613281 C 8.1309063 4.8153281 9.7076406 4.1512969 11.431641 4.0292969 C 11.398641 3.8492969 11.375 3.6646094 11.375 3.4746094 C 11.375 2.9426094 11.522766 2.4497187 11.759766 2.0117188 z M 17.552734 3.6894531 C 17.501734 4.4144531 17.207187 5.0692656 16.742188 5.5722656 C 18.713187 7.0312656 20 9.365 20 12 C 20 13.285 19.688437 14.495266 19.148438 15.572266 C 19.810437 15.791266 20.380547 16.191656 20.810547 16.722656 C 21.567547 15.314656 22 13.707 22 12 C 22 8.539 20.231734 5.4854531 17.552734 3.6894531 z M 4 6 A 2 2 0 0 0 4 10 A 2 2 0 0 0 4 6 z M 12 6 C 8.691 6 6 8.691 6 12 C 6 15.309 8.691 18 12 18 C 15.309 18 18 15.309 18 12 C 18 8.691 15.309 6 12 6 z M 12 8 C 14.206 8 16 9.794 16 12 C 16 14.206 14.206 16 12 16 C 9.794 16 8 14.206 8 12 C 8 9.794 9.794 8 12 8 z M 12 10 A 2 2 0 0 0 12 14 A 2 2 0 0 0 12 10 z M 2.0507812 11.017578 C 2.0187812 11.340578 2 11.668 2 12 C 2 17.514 6.486 22 12 22 C 13.188 22 14.323813 21.780438 15.382812 21.398438 C 14.928812 20.903437 14.609281 20.287609 14.488281 19.599609 C 13.704281 19.856609 12.869 20 12 20 C 7.589 20 4 16.411 4 12 C 4 11.864 4.0135313 11.731656 4.0195312 11.597656 C 4.0125313 11.597656 4.007 11.599609 4 11.599609 C 3.28 11.599609 2.6137812 11.382578 2.0507812 11.017578 z M 18.025391 16.974609 A 2 2 0 0 0 18.025391 20.974609 A 2 2 0 0 0 18.025391 16.974609 z"/></svg>
+        Nomada
+        <span class="crumb">Settings</span>
+      </div>
     </header>
+
     <main>
-      <section id="profilesSection">
-        <div class="section-header">
-          <h2>Proxy Profiles</h2>
-          <button class="btn-primary" id="addProfileBtn">+ Add Profile</button>
+      <section aria-labelledby="proxiesTitle">
+        <div class="section-head">
+          <h1 class="label" id="proxiesTitle">Proxies <span class="count" id="count" hidden></span></h1>
+          <button class="primary" id="addBtn" type="button">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+            Add proxy
+          </button>
         </div>
-        <div id="profilesList"></div>
+        <div class="list" id="list"></div>
       </section>
     </main>
   </div>
 
-  <div class="modal-overlay" id="modalOverlay" style="display:none;">
-    <div class="modal">
-      <h3 id="modalTitle">Add Profile</h3>
-      <label>Name
-        <input type="text" id="pName" placeholder="My Proxy">
-      </label>
-      <label>Color
-        <input type="color" id="pColor" value="#0969da">
-      </label>
-      <label>Type
-        <select id="pType">
-          <option value="http">HTTP</option>
-          <option value="https">HTTPS</option>
-          <option value="socks5">SOCKS5</option>
-          <option value="pac">PAC URL</option>
-        </select>
-      </label>
-      <div id="hostPortFields">
-        <label>Host <input type="text" id="pHost" placeholder="proxy.example.com"></label>
-        <label>Port <input type="number" id="pPort" placeholder="8080" min="1" max="65535"></label>
+  <dialog class="dialog" id="dialog" aria-labelledby="dialogTitle">
+    <form class="form" id="form" novalidate>
+      <header class="dialog-head">
+        <h2 id="dialogTitle">Add proxy</h2>
+        <button class="icon-btn" id="closeBtn" type="button" aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </header>
+
+      <div class="field">
+        <label for="fPaste">Paste proxy <span class="optional">— fills in the fields below</span></label>
+        <input class="input mono paste" id="fPaste" type="text" autocomplete="off" spellcheck="false" autofocus
+               placeholder="host:port:user:pass  ·  socks5://host:port">
+        <p class="hint" id="pasteHint" aria-live="polite" hidden></p>
       </div>
-      <div id="pacFields" style="display:none;">
-        <label>PAC URL <input type="text" id="pPacUrl" placeholder="http://..."></label>
+
+      <hr class="sep">
+
+      <fieldset class="field">
+        <legend>Type</legend>
+        <div class="segmented">
+          <label><input type="radio" name="type" value="http" checked><span>HTTP</span></label>
+          <label><input type="radio" name="type" value="https"><span>HTTPS</span></label>
+          <label><input type="radio" name="type" value="socks5"><span>SOCKS5</span></label>
+          <label><input type="radio" name="type" value="pac"><span>PAC</span></label>
+        </div>
+      </fieldset>
+
+      <div class="row addr" id="addrRow">
+        <div class="field">
+          <label for="fHost">Host</label>
+          <input class="input mono" id="fHost" type="text" autocomplete="off" spellcheck="false" placeholder="proxy.example.com">
+          <p class="error" data-error-for="host" hidden></p>
+        </div>
+        <div class="field">
+          <label for="fPort">Port</label>
+          <input class="input mono" id="fPort" type="text" inputmode="numeric" autocomplete="off" placeholder="8080">
+          <p class="error" data-error-for="port" hidden></p>
+        </div>
       </div>
-      <label>Username (optional)
-        <input type="text" id="pUser" autocomplete="off">
-      </label>
-      <label>Password (optional)
-        <input type="password" id="pPass" autocomplete="new-password">
-      </label>
-      <p id="socksAuthHint" style="display:none; font-size:11.5px; color:#cf222e; margin-top:4px;">
-        Chrome does not support username/password authentication for SOCKS5 proxies. Use an unauthenticated SOCKS5 proxy or HTTP/HTTPS.
-      </p>
-      <div class="modal-actions">
-        <button class="btn-primary" id="saveProfileBtn">Save</button>
-        <button class="btn-secondary" id="cancelModalBtn">Cancel</button>
-        <button class="btn-danger" id="deleteProfileBtn" style="display:none;">Delete</button>
+
+      <div class="field" id="pacRow" hidden>
+        <label for="fPacUrl">PAC URL</label>
+        <input class="input mono" id="fPacUrl" type="text" autocomplete="off" spellcheck="false" placeholder="https://example.com/proxy.pac">
+        <p class="error" data-error-for="pacUrl" hidden></p>
       </div>
-    </div>
-  </div>
+
+      <div class="row" id="authRow">
+        <div class="field">
+          <label for="fUser">Username <span class="optional">optional</span></label>
+          <input class="input mono" id="fUser" type="text" autocomplete="off" spellcheck="false">
+          <p class="error" data-error-for="username" hidden></p>
+        </div>
+        <div class="field">
+          <label for="fPass">Password <span class="optional">optional</span></label>
+          <input class="input mono" id="fPass" type="password" autocomplete="new-password">
+        </div>
+      </div>
+      <p class="note" id="socksNote" hidden>Chrome can't sign in to SOCKS5 proxies, so this one must work without a username and password.</p>
+
+      <hr class="sep">
+
+      <div class="field">
+        <label for="fName">Name <span class="optional">optional</span></label>
+        <input class="input" id="fName" type="text" autocomplete="off" maxlength="60">
+      </div>
+
+      <fieldset class="field">
+        <legend>Colour</legend>
+        <div class="swatches" id="swatches">
+          <span class="swatch custom" id="customSwatch">
+            <input type="radio" name="color" value="custom" aria-label="Custom colour">
+            <span></span>
+            <input type="color" id="fCustomColor" aria-label="Pick a custom colour" value="#64748b">
+          </span>
+        </div>
+      </fieldset>
+
+      <footer class="dialog-foot">
+        <button class="danger" id="deleteBtn" type="button" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button class="ghost" id="cancelBtn" type="button">Cancel</button>
+        <button class="primary" id="saveBtn" type="submit">Save</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="./index.ts"></script>
 </body>
