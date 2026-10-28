@@ -5,7 +5,7 @@ import { applySpoof } from './spoof';
 import { refreshIcon } from './icon';
 import { lookupDirectPlace, lookupProxyPlace } from './places';
 import { answerProbeChallenge, detectProxyType, noteProxyError } from './detect';
-import { isFresh, spoofConfigOf } from './state-helpers';
+import { isFresh, spoofConfigOf, withProxyPlace } from './state-helpers';
 import type { ActionResult, BgMessage, BgState, WooPortalData } from '../types';
 
 const OK: ActionResult = { success: true };
@@ -87,9 +87,7 @@ async function refreshProxyPlace(force = false): Promise<ActionResult> {
     void refreshRealPlace();
     return { success: false, error: `“${profile.name}” didn't respond — Nomada stayed off` };
   }
-  await commit(d => (activeProfileOf(d)?.id === profile.id
-    ? { ...d, proxyPlace: { ...place, profileId: profile.id } }
-    : d));
+  await commit(d => (activeProfileOf(d)?.id === profile.id ? withProxyPlace(d, profile.id, place) : d));
   return OK;
 }
 

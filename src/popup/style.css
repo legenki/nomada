@@ -1,6 +1,7 @@
 /* Nomada popup — minimal, light/dark. */
 
 @import '../styles/tokens.css';
+@import '../styles/flags.css';
 
 :root {
   --globe-dot: #6b7684;
@@ -185,7 +186,7 @@ button { font: inherit; color: inherit; }
   gap: 10px;
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--flag-soft, var(--line));
   border-radius: 12px;
   background: var(--surface);
   text-align: left;
@@ -193,8 +194,7 @@ button { font: inherit; color: inherit; }
   transition: border-color 0.15s, background 0.15s;
 }
 .proxy:hover { background: var(--surface-2); }
-.proxy[aria-checked="true"] { border-color: var(--accent); }
-.proxy-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.proxy[aria-checked="true"] { border-color: var(--flag, var(--accent)); }
 .proxy-text { flex: 1; min-width: 0; }
 .proxy-name { display: block; font-weight: 600; }
 .proxy-meta {

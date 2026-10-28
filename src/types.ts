@@ -19,12 +19,21 @@ export interface ProxyConfig {
   routingRules: RoutingRules;
 }
 
+export interface Country {
+  /** ISO 3166-1 alpha-2, upper case. */
+  code: string;
+  name: string;
+}
+
 export interface ProxyProfile {
   id: string;
   name: string;
   description: string;
+  /** No longer shown (the card takes its colour from the flag); kept for stored data. */
   color: string;
   config: ProxyConfig;
+  /** Country of the proxy's exit IP, remembered from the last lookup or check. */
+  exitCountry?: Country;
   createdAt: string;
   updatedAt: string;
   tags: string[];

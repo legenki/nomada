@@ -1,5 +1,6 @@
 import { Globe } from './globe';
-import { escHtml, safeColor } from '../lib/html';
+import { escHtml } from '../lib/html';
+import { flagHtml, paintFlags } from '../lib/flags';
 import type { ActionResult, BgMessage, BgState, Place, ProxyProfile } from '../types';
 
 function sendMsg<T = unknown>(msg: BgMessage, retries = 3): Promise<T> {
@@ -80,14 +81,15 @@ function renderProxies(s: BgState): void {
   }
   proxyList.innerHTML = s.profiles.map(p => `
     <button class="proxy" type="button" role="radio" data-id="${escHtml(p.id)}"
-            aria-checked="${p.id === s.activeProfile?.id}">
-      <span class="proxy-dot" style="background:${safeColor(p.color)}"></span>
+            aria-checked="${p.id === s.activeProfile?.id}"${p.exitCountry ? ` data-flag="${escHtml(p.exitCountry.code)}"` : ''}>
+      ${flagHtml(p.exitCountry)}
       <span class="proxy-text">
         <span class="proxy-name">${escHtml(p.name)}</span>
         <span class="proxy-meta">${escHtml(proxyMeta(p))}</span>
       </span>
       <span class="radio" aria-hidden="true"></span>
     </button>`).join('');
+  paintFlags(proxyList);
 }
 
 function render(): void {

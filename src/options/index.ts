@@ -1,6 +1,7 @@
 import { readData, updateProfiles } from '../lib/storage';
 import { isProtected, proxyPlaceOf, selectedProfileOf } from '../lib/state';
-import { escHtml, safeColor } from '../lib/html';
+import { escHtml } from '../lib/html';
+import { flagHtml, paintFlags } from '../lib/flags';
 import type { ActionResult, BgMessage, DetectResult, ProxyConfig, ProxyProfile, WooPortalData } from '../types';
 import { parseProxyString } from './parse';
 import { validateProfile, type ValidationError } from './validate';
@@ -9,11 +10,6 @@ type ProxyType = ProxyConfig['type'];
 /** 'auto' finds the type on save. */
 type FormType = ProxyType | 'auto';
 type FormField = ValidationError['field'] | 'type';
-
-const PRESET_COLORS: [hex: string, name: string][] = [
-  ['#16a34a', 'Green'], ['#2563eb', 'Blue'], ['#7c3aed', 'Violet'], ['#db2777', 'Pink'],
-  ['#dc2626', 'Red'], ['#ea580c', 'Orange'], ['#ca8a04', 'Amber'], ['#0891b2', 'Cyan'],
-];
 
 const svg = (path: string, cls = 'icon', label = '') =>
   `<svg class="${cls}" viewBox="0 0 24 24" ${label ? `role="img" aria-label="${label}"` : 'aria-hidden="true"'}><path d="${path}"/></svg>`;
@@ -35,7 +31,6 @@ const addBtn       = byId<HTMLButtonElement>('addBtn');
 const dialog       = byId<HTMLDialogElement>('dialog');
 const form         = byId<HTMLFormElement>('form');
 const pasteHint    = byId<HTMLElement>('pasteHint');
-const customSwatch = byId<HTMLElement>('customSwatch');
 const deleteBtn    = byId<HTMLButtonElement>('deleteBtn');
 const saveBtn      = byId<HTMLButtonElement>('saveBtn');
 const toastEl      = byId<HTMLElement>('toast');
@@ -47,13 +42,12 @@ const f = {
   username:    byId<HTMLInputElement>('fUser'),
   password:    byId<HTMLInputElement>('fPass'),
   name:        byId<HTMLInputElement>('fName'),
-  customColor: byId<HTMLInputElement>('fCustomColor'),
 };
 const INPUT_FOR: Record<FormField, HTMLInputElement> = {
   host: f.host, port: f.port, pacUrl: f.pacUrl, username: f.username,
   type: form.querySelector<HTMLInputElement>('input[name="type"][value="auto"]')!,
 };
-const radios = (name: 'type' | 'color') => form.elements.namedItem(name) as RadioNodeList;
+const typeRadios = () => form.elements.namedItem('type') as RadioNodeList;
 
 // Only what's on screen. Every write re-reads storage first, so changes made in
 // the popup while this page is open are never overwritten.
@@ -107,8 +101,8 @@ function renderList(): void {
   list.innerHTML = d.profiles.map(p => {
     const s = statusOf(p, d);
     return `
-    <button class="card" type="button" data-id="${escHtml(p.id)}"${s ? ` data-status="${s.kind}"` : ''}>
-      <span class="dot" style="background:${safeColor(p.color)}"></span>
+    <button class="card" type="button" data-id="${escHtml(p.id)}"${s ? ` data-status="${s.kind}"` : ''}${p.exitCountry ? ` data-flag="${escHtml(p.exitCountry.code)}"` : ''}>
+      ${flagHtml(p.exitCountry)}
       <span class="card-main">
         <span class="name">${escHtml(p.name)}</span>
         <span class="meta"><span class="meta-text">${escHtml(address(p))}</span>${p.config.auth.username ? ICON.lock : ''}</span>
@@ -120,6 +114,7 @@ function renderList(): void {
       ${ICON.chevron}
     </button>`;
   }).join('');
+  paintFlags(list);
 }
 
 async function load(): Promise<void> {
@@ -129,10 +124,10 @@ async function load(): Promise<void> {
 
 // ── Dialog ──────────────────────────────────────────────────────────────────
 
-const currentType = () => radios('type').value as FormType;
+const currentType = () => typeRadios().value as FormType;
 
 function setType(type: FormType): void {
-  radios('type').value = type;
+  typeRadios().value = type;
   updateTypeFields();
 }
 
@@ -156,28 +151,6 @@ function fallbackName(): string {
 function updateNamePlaceholder(): void {
   // Auto names the proxy after its exit city, found on save.
   f.name.placeholder = currentType() === 'auto' ? 'City of the exit IP' : fallbackName() || 'My proxy';
-}
-
-function setCustomColor(color: string): void {
-  // <input type="color"> only takes #rrggbb.
-  const hex = color.length === 4 ? `#${[...color.slice(1)].map(c => c + c).join('')}` : color;
-  f.customColor.value = hex;
-  customSwatch.style.setProperty('--c', hex);
-  radios('color').value = 'custom';
-}
-
-function setColor(color: string): void {
-  const c = safeColor(color).toLowerCase();
-  if (PRESET_COLORS.some(([hex]) => hex === c)) radios('color').value = c;
-  else setCustomColor(c);
-}
-
-const currentColor = () => (radios('color').value === 'custom' ? f.customColor.value : radios('color').value);
-
-/** A preset no other proxy uses yet, so new proxies are easy to tell apart. */
-function nextColor(): string {
-  const used = new Set(data?.profiles.map(p => p.color.toLowerCase()));
-  return (PRESET_COLORS.find(([hex]) => !used.has(hex)) ?? PRESET_COLORS[0])[0];
 }
 
 function clearErrors(): void {
@@ -263,7 +236,6 @@ function openDialog(id?: string): void {
   clearErrors();
   resetDelete();
   pasteHint.hidden = true;
-  customSwatch.style.setProperty('--c', f.customColor.value);
   byId('dialogTitle').textContent = profile ? 'Edit proxy' : 'Add proxy';
   deleteBtn.hidden = !profile;
 
@@ -275,7 +247,6 @@ function openDialog(id?: string): void {
   f.username.value = c?.auth.username ?? '';
   f.password.value = c?.auth.password ?? '';
   f.name.value = profile?.name ?? '';
-  setColor(profile?.color ?? nextColor());
   updateNamePlaceholder();
   dialog.showModal();
 }
@@ -351,20 +322,28 @@ async function saveProfile(): Promise<void> {
     const now = new Date().toISOString();
     const latest = (await readData()).profiles;
     const existing = latest.find(p => p.id === id);
+    const config: ProxyConfig = {
+      type,
+      host: isPac ? '' : host,
+      port: isPac ? 0 : port,
+      pacUrl: isPac ? pacUrl : '',
+      auth,
+      bypassList: existing?.config.bypassList ?? [],
+      routingRules: existing?.config.routingRules ?? { enabled: false, mode: 'whitelist', domains: [] },
+    };
+    // Another server may exit somewhere else: forget its country until it's looked up again.
+    const old = existing?.config;
+    const sameServer = !!old && old.type === config.type && old.host === config.host
+      && old.port === config.port && old.pacUrl === config.pacUrl;
     const profile: ProxyProfile = {
       id,
       name: f.name.value.trim() || found?.place?.city || fallbackName(),
       description: existing?.description ?? '',
-      color: safeColor(currentColor()),
-      config: {
-        type,
-        host: isPac ? '' : host,
-        port: isPac ? 0 : port,
-        pacUrl: isPac ? pacUrl : '',
-        auth,
-        bypassList: existing?.config.bypassList ?? [],
-        routingRules: existing?.config.routingRules ?? { enabled: false, mode: 'whitelist', domains: [] },
-      },
+      color: existing?.color ?? '#808080',
+      config,
+      exitCountry: found?.place?.countryCode
+        ? { code: found.place.countryCode, name: found.place.country }
+        : sameServer ? existing?.exitCountry : undefined,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
       tags: existing?.tags ?? [],
@@ -398,11 +377,6 @@ async function deleteProfile(): Promise<void> {
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
-customSwatch.insertAdjacentHTML('beforebegin', PRESET_COLORS.map(([hex, name]) => `
-  <span class="swatch" style="--c:${hex}">
-    <input type="radio" name="color" value="${hex}" aria-label="${name}"><span></span>
-  </span>`).join(''));
-
 addBtn.addEventListener('click', () => openDialog());
 list.addEventListener('click', e => {
   const target = e.target as Element;
@@ -413,10 +387,9 @@ list.addEventListener('click', e => {
 
 form.addEventListener('submit', e => { e.preventDefault(); void saveProfile(); });
 form.addEventListener('input', e => { if (e.target !== f.paste) clearErrors(); });
-radios('type').forEach(radio => radio.addEventListener('change', () => { clearErrors(); updateTypeFields(); }));
+typeRadios().forEach(radio => radio.addEventListener('change', () => { clearErrors(); updateTypeFields(); }));
 f.host.addEventListener('input', updateNamePlaceholder);
 f.pacUrl.addEventListener('input', updateNamePlaceholder);
-f.customColor.addEventListener('input', () => setCustomColor(f.customColor.value));
 
 f.paste.addEventListener('input', () => { applyPaste(false); });
 f.paste.addEventListener('change', () => { applyPaste(true); });

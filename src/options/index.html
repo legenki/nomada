@@ -28,6 +28,11 @@
         <div class="list" id="list"></div>
       </section>
     </main>
+
+    <footer class="credits">
+      Flag artwork: <a href="https://github.com/twitter/twemoji" target="_blank" rel="noopener">Twemoji</a>,
+      <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC-BY 4.0</a>
+    </footer>
   </div>
 
   <dialog class="dialog" id="dialog" aria-labelledby="dialogTitle">
@@ -99,17 +104,6 @@
         <label for="fName">Name <span class="optional">optional</span></label>
         <input class="input" id="fName" type="text" autocomplete="off" maxlength="60">
       </div>
-
-      <fieldset class="field">
-        <legend>Colour</legend>
-        <div class="swatches" id="swatches">
-          <span class="swatch custom" id="customSwatch">
-            <input type="radio" name="color" value="custom" aria-label="Custom colour">
-            <span></span>
-            <input type="color" id="fCustomColor" aria-label="Pick a custom colour" value="#64748b">
-          </span>
-        </div>
-      </fieldset>
 
       <footer class="dialog-foot">
         <button class="danger" id="deleteBtn" type="button" hidden>Delete</button>

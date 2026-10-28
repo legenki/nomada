@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { spoofConfigOf, isFresh } from '../src/background/state-helpers';
+import { spoofConfigOf, isFresh, withProxyPlace } from '../src/background/state-helpers';
 import type { Place, ProxyPlace, WooPortalData } from '../src/types';
 
 const place: ProxyPlace = {
@@ -87,5 +87,22 @@ describe('isFresh', () => {
 
   it('returns false for undefined place', () => {
     expect(isFresh(undefined)).toBe(false);
+  });
+});
+
+describe('withProxyPlace', () => {
+  const { profileId: _, ...berlin } = { ...place, ip: '9.9.9.9', city: 'Berlin', country: 'Germany', countryCode: 'DE' };
+
+  it("stores the proxy's place and remembers its country on the profile", () => {
+    const next = withProxyPlace(baseData, 'p2', berlin);
+    expect(next.proxyPlace).toEqual({ ...berlin, profileId: 'p2' });
+    expect(next.profiles[1].exitCountry).toEqual({ code: 'DE', name: 'Germany' });
+    expect(next.profiles[0]).toBe(baseData.profiles[0]);
+  });
+
+  it('keeps the remembered country when the lookup has none', () => {
+    const known = withProxyPlace(baseData, 'p1', berlin);
+    const next = withProxyPlace(known, 'p1', { ...berlin, countryCode: '' });
+    expect(next.profiles[0].exitCountry).toEqual({ code: 'DE', name: 'Germany' });
   });
 });
