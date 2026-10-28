@@ -28,7 +28,10 @@ HOW IT WORKS
 ━━━━━━━━━━━━━━━━━━━━
 
 🔌 Add your proxy
-HTTP, HTTPS, SOCKS5 or PAC, with optional username and password.
+Paste it in any common format — host:port, host:port:user:pass, user:pass@host:port or socks5://… — and Nomada fills in the rest. Leave the type on Auto and it checks whether the proxy speaks HTTP, SOCKS5 or HTTPS, finds the country it exits in, and tells you plainly if the proxy can't be reached or rejects the login. PAC scripts work too.
+
+🏳️ Know where every proxy goes
+Each proxy shows the flag of the country it exits in, and the one in use is highlighted with its status and city.
 
 ⚡ Switch Nomada on
 Traffic goes through the proxy. Nomada looks up where the proxy's exit IP is and matches your browser to it:
@@ -55,6 +58,7 @@ WHY NOMADA
 ━━━━━━━━━━━━━━━━━━━━
 
 ✓ One switch — proxy, location, timezone and language move together
+✓ Paste a proxy and go — type and country are detected for you
 ✓ No "debugging this browser" banner
 ✓ Switch proxies and open tabs update instantly
 ✓ No account required
@@ -64,7 +68,7 @@ WHY NOMADA
 PRIVACY
 ━━━━━━━━━━━━━━━━━━━━
 
-Nomada stores all settings locally in your browser. It does not collect, sell or transmit your personal data. To show and match locations it asks ipwho.is where an IP address is: your own IP while Nomada is off, the proxy's exit IP while it's on.
+Nomada stores all settings locally in your browser. It does not collect, sell or transmit your personal data. To show and match locations it asks ipwho.is where an IP address is: your own IP while Nomada is off, the proxy's exit IP while it's on, and — once, through that proxy only — a proxy you save with the Auto type.
 ```
 
 ---
@@ -97,17 +101,27 @@ Nomada routes the browser through a user-configured proxy and makes the browser'
 
 ---
 
-## Assets needed before submitting
-- [ ] Icon 128×128 (have it — universe icon)
-- [ ] At least 1 screenshot, 1280×800 or 640×400 (popup with globe)
-- [ ] Recommended: 3-5 screenshots (popup OFF with real location, popup ON with the route to the proxy, proxy list, options page)
-- [ ] Optional: small promo tile 440×280
-- [ ] Privacy policy URL (required because the extension handles location data)
+## Assets (in `store-assets/`)
+- [x] Icon 128×128 (`public/icons/icon-128.png`)
+- [x] Screenshots 1280×800: `screenshot-1-popup.png`, `screenshot-2-proxies.png`, `screenshot-3-add-proxy.png`
+- [x] Small promo tile 440×280: `Thumb.png`
+- [x] Marquee promo tile 1400×560: `Wide.png`
+- [x] Large tile 920×680: `Mid.png` (the store no longer asks for it; kept for other uses)
+- [x] Privacy policy URL (required because the extension handles location data)
 
 ---
 
-## Suggested screenshot captions
+## Screenshot captions
 1. "One switch — your whole browser moves to your proxy's location."
-2. "Location, timezone and language follow the proxy automatically."
-3. "See where sites think you are: city, local time, language, IP."
-4. "Bring your own HTTP, HTTPS, SOCKS5 or PAC proxy."
+2. "Every proxy shows the country it exits in."
+3. "Paste any proxy — Nomada finds its type and country."
+
+---
+
+## Release notes — 1.2.0
+*For the developer dashboard / changelog; the store has no public "what's new" field.*
+- New settings page in the popup's style, light and dark
+- Paste a proxy in any common format to fill in the form
+- Auto proxy type: HTTP, SOCKS5 or HTTPS is detected on save, with clear errors for unreachable proxies and rejected logins
+- Proxies show the flag of their exit country instead of a colour
+- No new permissions

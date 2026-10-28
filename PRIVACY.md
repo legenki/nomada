@@ -1,6 +1,6 @@
 # Privacy Policy — Nomada
 
-_Last updated: 2026-10-22_
+_Last updated: 2026-10-29_
 
 Nomada ("the extension") is a browser extension that routes your browser
 through a proxy you configure and matches your browser's reported geolocation,
