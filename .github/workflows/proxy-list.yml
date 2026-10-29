@@ -1,0 +1,48 @@
+# Checks the public proxies from TheSpeedX/SOCKS-List and publishes the working
+# ones as proxies.json on the proxy-list branch, for the settings page's gallery.
+name: Public proxy list
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: proxy-list
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Month for the DB-IP cache
+        id: month
+        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: .cache/dbip
+          key: dbip-${{ steps.month.outputs.month }}
+
+      - name: Check proxies
+        run: node tools/proxy-list/main.ts --out out/proxies.json --cache .cache/dbip
+
+      # The branch holds only the latest file, so main's history stays clean.
+      - name: Publish to the proxy-list branch
+        run: |
+          cd out
+          git init -q -b proxy-list
+          git add proxies.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Proxy list $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" proxy-list

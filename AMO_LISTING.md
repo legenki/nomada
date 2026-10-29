@@ -25,6 +25,9 @@ HOW IT WORKS
 🔌 Add your proxy
 Paste it in any common format — host:port, host:port:user:pass, user:pass@host:port or socks5://… — and Nomada fills in the rest. Leave the type on Auto and it checks whether the proxy speaks HTTP, SOCKS5 or HTTPS, finds the country it exits in, and tells you plainly if the proxy can't be reached or rejects the login. SOCKS5 proxies with a username and password work too.
 
+🗂 Public proxies, ready to try
+No proxy yet? The settings page shows a gallery of public proxies that are checked every few hours — only working ones, with their country and speed. Filter by country or by HTTP / SOCKS5 and add one with a click. They're run by strangers, so use them to see a site from another country, not to sign in or pay.
+
 🏳️ Know where every proxy goes
 Each proxy shows the flag of the country it exits in, and the one in use is highlighted with its status and city.
 
@@ -80,5 +83,7 @@ proxy.onRequest routes traffic through the proxy the user configured. While Noma
 
 Content scripts (spoof-main.js in the MAIN world, spoof-bridge.js isolated) are registered only while Nomada is on; they override Date/Intl/navigator.language/geolocation with the proxy location's values.
 
-innerHTML in popup.js / options.js renders the proxy list from the user's own settings; every value is passed through an HTML-escaping function (src/lib/html.ts escHtml) or is a constant.
+innerHTML in popup.js / options.js renders the proxy list from the user's own settings and the public proxy gallery; every value is passed through an HTML-escaping function (src/lib/html.ts escHtml) or is a constant.
+
+Public proxy gallery: the settings page downloads https://raw.githubusercontent.com/legenki/nomada/proxy-list/proxies.json — data only (no code), built every 6 hours by the repository's GitHub Actions job (tools/proxy-list). The JSON is validated entry by entry before use (src/lib/public-proxies.ts parsePublicList: IPv4 host, port range, type, country code).
 ```

@@ -90,6 +90,24 @@ export interface ActionResult {
   error?: string;
 }
 
+/** A public proxy that the list checker (tools/proxy-list) found working. */
+export interface PublicProxy {
+  type: 'http' | 'socks5';
+  host: string;
+  port: number;
+  /** ISO 3166-1 alpha-2 of the exit IP. */
+  country: string;
+  /** Round trip measured by the checker (not from the user's connection). */
+  ms: number;
+}
+
+/** proxies.json, published by the checker. */
+export interface PublicList {
+  updatedAt: string;
+  source: string;
+  proxies: PublicProxy[];
+}
+
 /** A proxy server to test before saving it. */
 export interface ProbeTarget {
   host: string;

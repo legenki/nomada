@@ -50,6 +50,15 @@ Nomada sends nothing in these requests beyond what any HTTP request carries
 (the IP the request comes from, as seen by ipwho.is). See ipwho.is's own privacy
 terms for how they handle it.
 
+The settings page also downloads the list of public proxies from GitHub
+(`raw.githubusercontent.com`, at most every 3 hours, or when you refresh it).
+Nothing about you is sent with that request beyond what any download carries.
+
+**Public proxies** in that list are run by third parties, not by Nomada. If you
+choose one, your browsing goes through a server operated by someone unknown: it
+can see which sites you visit and read or change anything not sent over HTTPS.
+Don't use public proxies to sign in, pay, or send anything private.
+
 No other analytics, telemetry, or tracking requests are made by the extension.
 
 ## Permissions

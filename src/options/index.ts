@@ -3,8 +3,10 @@ import { isProtected, proxyPlaceOf, selectedProfileOf } from '../lib/state';
 import { escHtml } from '../lib/html';
 import { SOCKS_LOGIN, SUPPORTS_PAC } from '../lib/platform';
 import { flagHtml, paintFlags } from '../lib/flags';
-import type { ActionResult, BgMessage, DetectResult, ProxyConfig, ProxyProfile, WooPortalData } from '../types';
+import type { ActionResult, BgMessage, DetectResult, ProxyConfig, ProxyProfile, PublicProxy, WooPortalData } from '../types';
 import { parseProxyString } from './parse';
+import { countryName, initGallery } from './gallery';
+import { findProfile, publicProfile } from '../lib/public-proxies';
 import { validateProfile, type ValidationError } from './validate';
 
 type ProxyType = ProxyConfig['type'];
@@ -105,7 +107,7 @@ function renderList(): void {
     <button class="card" type="button" data-id="${escHtml(p.id)}"${s ? ` data-status="${s.kind}"` : ''}${p.exitCountry ? ` data-flag="${escHtml(p.exitCountry.code)}"` : ''}>
       ${flagHtml(p.exitCountry)}
       <span class="card-main">
-        <span class="name">${escHtml(p.name)}</span>
+        <span class="name-row"><span class="name">${escHtml(p.name)}</span>${p.tags?.includes('public') ? '<span class="tag">Public</span>' : ''}</span>
         <span class="meta"><span class="meta-text">${escHtml(address(p))}</span>${p.config.auth.username ? ICON.lock : ''}</span>
       </span>
       ${s ? `<span class="card-side">
@@ -116,7 +118,11 @@ function renderList(): void {
     </button>`;
   }).join('');
   paintFlags(list);
+  renderGallery();
 }
+
+// Re-render the public gallery too: its cards show which proxies are already added.
+let renderGallery = () => {};
 
 async function load(): Promise<void> {
   data = await readData();
@@ -368,6 +374,35 @@ async function saveProfile(): Promise<void> {
   }
 }
 
+// ── Public proxies ──────────────────────────────────────────────────────────
+
+/** Save a public proxy to "My proxies" (or find it there already). */
+async function addPublic(p: PublicProxy, announce = true): Promise<ProxyProfile> {
+  const latest = (await readData()).profiles;
+  const existing = findProfile(latest, p);
+  if (existing) return existing;
+  const profile = publicProfile(p, countryName(p.country), generateId(), new Date().toISOString());
+  data = await updateProfiles([...latest, profile]);
+  renderList();
+  if (announce) toast(`Added “${profile.name}” · ${p.host}:${p.port}`);
+  await applyChanges();
+  return profile;
+}
+
+/** Save it if needed, select it, and switch Nomada on through it. */
+async function usePublic(p: PublicProxy): Promise<void> {
+  const profile = await addPublic(p, false);
+  const current = await readData();
+  if (current.enabled && current.activeProfileId === profile.id) {
+    toast(`Already using “${profile.name}”`);
+    return;
+  }
+  let result = await send<ActionResult>({ type: 'SELECT_PROFILE', payload: { id: profile.id } });
+  if (result?.success && !current.enabled) result = await send<ActionResult>({ type: 'ENABLE' });
+  if (result?.success) toast(`Connected via “${profile.name}” · ${p.host}:${p.port}`);
+  else toast(result?.error ?? "Couldn't connect through this proxy", 'warn');
+}
+
 async function deleteProfile(): Promise<void> {
   if (!editingId) return;
   const id = editingId;
@@ -425,8 +460,15 @@ let pressedBackdrop = false;
 dialog.addEventListener('pointerdown', e => { pressedBackdrop = e.target === dialog; });
 dialog.addEventListener('click', e => { if (pressedBackdrop && e.target === dialog) dialog.close(); });
 
-chrome.storage.onChanged.addListener((_changes, area) => {
-  if (area === 'local') void load();
+renderGallery = initGallery({
+  profiles: () => data?.profiles ?? [],
+  add: async p => { await addPublic(p); },
+  use: usePublic,
+}).render;
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  // The public list's cache lives in local storage too; it doesn't change profiles.
+  if (area === 'local' && Object.keys(changes).some(k => k !== 'nomadaPublicProxies')) void load();
 });
 
 void load();

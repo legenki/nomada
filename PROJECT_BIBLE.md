@@ -32,6 +32,7 @@ Nomada — расширение Chrome (Manifest V3) на TypeScript + Vite. О�
 - `/src/options/` — управление профилями прокси в стиле попапа: список карточек со статусом выбранного прокси (Active / Connecting… / Selected + место выхода) и диалог `<dialog>` добавления/редактирования. Тип по умолчанию — Auto: при сохранении background определяет рабочий тип, пустое имя заменяется городом выхода. Вместо цвета профиля карточки показывают флаг страны выхода, рамка — цвета флага (у выбранной — в полную силу).
   - `parse.ts` — разбор строки прокси при вставке (`host:port:user:pass`, `user:pass@host:port`, `socks5://…`, URL PAC-скрипта и др.).
   - `validate.ts` — проверка формы; ошибка привязана к полю (`{ field, message }`).
+- Галерея публичных прокси на странице настроек (`src/options/gallery.ts`, `src/lib/public-proxies.ts`): список из TheSpeedX/SOCKS-List проверяет GitHub Actions (`.github/workflows/proxy-list.yml` → `tools/proxy-list/`) раз в 6 часов — подключение через каждый адрес к api.ipify.org, страна выхода по офлайн-базе DB-IP Lite — и публикует `proxies.json` в ветке `proxy-list`; страница скачивает его (кэш 3 часа в `storage.local`). «Add» сохраняет прокси с `tags: ['public']` (бейдж «Public»), «Use» ещё и включает Nomada через него.
 - `/src/styles/tokens.css` — общие токены дизайна (цвета светлой/тёмной темы, радиусы, шрифты) для попапа и настроек.
 - `/src/styles/flags.css` + `/public/fonts/TwemojiCountryFlags.woff2` — флаги-эмодзи встроенным шрифтом Twemoji (CC-BY 4.0, см. `public/fonts/LICENSE.md`), чтобы они были и на Windows.
 - `/src/lib/` — `storage.ts`, `storage-migration.ts`, `state.ts` (что сейчас активно), локали стран, иконки, HTML-экранирование, `flags.ts` (эмодзи флага, основной цвет флага по пикселям canvas с кешем в `localStorage`).
@@ -57,6 +58,7 @@ Nomada — расширение Chrome (Manifest V3) на TypeScript + Vite. О�
 - `npm run typecheck` — `tsc --noEmit` по `src` и `tests`.
 - `npm run package` — сборка + `nomada-extension.zip` для Chrome Web Store (zip в git не хранится).
 - `npm run build:firefox` / `npm run package:firefox` — версия для Firefox в `dist-firefox/`, `nomada-firefox.zip` и `nomada-firefox-source.zip` (исходники для AMO, `git archive HEAD`).
+- `npm run proxy-list` — собрать `proxies.json` локально (`-- --limit 50` для пробы; полный прогон делает GitHub Actions).
 - `npm run lint:firefox` / `npm run start:firefox` — `web-ext lint` / запуск Firefox с расширением.
 - `npm run dev:popup` — Запуск сборки попапа в режиме watch (удобно для стилизации).
 - `npm run test` — Запуск тестов на Vitest.

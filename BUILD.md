@@ -47,4 +47,8 @@ Third-party code bundled in: `d3-geo` and `topojson-client` (versions pinned in
 outlines). `public/fonts/TwemojiCountryFlags.woff2` is the Twemoji flag font,
 see `public/fonts/LICENSE.md`.
 
+`tools/proxy-list/` is not part of the package: it runs in GitHub Actions
+(`.github/workflows/proxy-list.yml`) and publishes the public proxy list that
+the settings page downloads.
+
 `npm test` runs the unit tests (Vitest).

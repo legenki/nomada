@@ -11,11 +11,12 @@
     "build:options": "vite build --config vite.config.options.ts",
     "build:firefox": "TARGET=firefox npm run build",
     "dev:popup": "vite build --config vite.config.popup.ts --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tools",
     "package": "npm run build && rm -f nomada-extension.zip && cd dist && zip -qrX ../nomada-extension.zip .",
     "package:firefox": "npm run build:firefox && rm -f nomada-firefox.zip nomada-firefox-source.zip && (cd dist-firefox && zip -qrX ../nomada-firefox.zip .) && git archive --format=zip -o nomada-firefox-source.zip HEAD",
     "lint:firefox": "npx --yes web-ext@10.8.0 lint --source-dir dist-firefox",
     "start:firefox": "npx --yes web-ext@10.8.0 run --source-dir dist-firefox",
+    "proxy-list": "node tools/proxy-list/main.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -26,6 +27,7 @@
   "devDependencies": {
     "@types/chrome": "^0.0.268",
     "@types/d3-geo": "^3.1.0",
+    "@types/node": "24.19.2",
     "@types/topojson-client": "^3.1.4",
     "typescript": "^5.4.5",
     "vite": "^5.2.12",

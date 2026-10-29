@@ -30,6 +30,9 @@ HOW IT WORKS
 🔌 Add your proxy
 Paste it in any common format — host:port, host:port:user:pass, user:pass@host:port or socks5://… — and Nomada fills in the rest. Leave the type on Auto and it checks whether the proxy speaks HTTP, SOCKS5 or HTTPS, finds the country it exits in, and tells you plainly if the proxy can't be reached or rejects the login. PAC scripts work too.
 
+🗂 Public proxies, ready to try
+No proxy yet? The settings page shows a gallery of public proxies that are checked every few hours — only working ones, with their country and speed. Filter by country or by HTTP / SOCKS5 and add one with a click. They're run by strangers, so use them to see a site from another country, not to sign in or pay.
+
 🏳️ Know where every proxy goes
 Each proxy shows the flag of the country it exits in, and the one in use is highlighted with its status and city.
 
@@ -125,3 +128,6 @@ Nomada routes the browser through a user-configured proxy and makes the browser'
 - Auto proxy type: HTTP, SOCKS5 or HTTPS is detected on save, with clear errors for unreachable proxies and rejected logins
 - Proxies show the flag of their exit country instead of a colour
 - No new permissions
+
+## Release notes — next version
+- Public proxy gallery on the settings page: working public proxies (checked every 6 hours), by country and type, added or used with one click
