@@ -69,7 +69,7 @@ Paste `PRIVACY.md`.
 
 ## Screenshots
 `store-assets/screenshot-1-popup.png`, `screenshot-2-proxies.png`,
-`screenshot-3-add-proxy.png` (1280×800; the UI is the same in Firefox).
+`screenshot-3-add-proxy.png`, `screenshot-4-public-proxies.png` (1280×800; the UI is the same in Firefox).
 
 ---
 

@@ -106,7 +106,7 @@ Nomada routes the browser through a user-configured proxy and makes the browser'
 
 ## Assets (in `store-assets/`)
 - [x] Icon 128×128 (`public/icons/icon-128.png`)
-- [x] Screenshots 1280×800: `screenshot-1-popup.png`, `screenshot-2-proxies.png`, `screenshot-3-add-proxy.png`
+- [x] Screenshots 1280×800: `screenshot-1-popup.png`, `screenshot-2-proxies.png`, `screenshot-3-add-proxy.png`, `screenshot-4-public-proxies.png`
 - [x] Small promo tile 440×280: `Thumb.png`
 - [x] Marquee promo tile 1400×560: `Wide.png`
 - [x] Large tile 920×680: `Mid.png` (the store no longer asks for it; kept for other uses)
@@ -118,6 +118,7 @@ Nomada routes the browser through a user-configured proxy and makes the browser'
 1. "One switch — your whole browser moves to your proxy's location."
 2. "Every proxy shows the country it exits in."
 3. "Paste any proxy — Nomada finds its type and country."
+4. "No proxy yet? Pick a working public one by country."
 
 ---
 
@@ -129,5 +130,8 @@ Nomada routes the browser through a user-configured proxy and makes the browser'
 - Proxies show the flag of their exit country instead of a colour
 - No new permissions
 
-## Release notes — next version
+## Release notes — 1.3.0
 - Public proxy gallery on the settings page: working public proxies (checked every 6 hours), by country and type, added or used with one click
+- "Can't connect to host:port" now shows when a proxy can't be reached during the Auto check (the error used to be missed)
+- The toolbar icon stays green while protected
+- No new permissions
