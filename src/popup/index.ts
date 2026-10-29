@@ -1,6 +1,7 @@
 import { Globe } from './globe';
 import { escHtml } from '../lib/html';
 import { flagHtml, paintFlags } from '../lib/flags';
+import { TARGET } from '../lib/platform';
 import type { ActionResult, BgMessage, BgState, Place, ProxyProfile } from '../types';
 
 function sendMsg<T = unknown>(msg: BgMessage, retries = 3): Promise<T> {
@@ -31,6 +32,7 @@ const langEl     = $<HTMLElement>('#lang');
 const ipEl       = $<HTMLElement>('#ip');
 const note       = $<HTMLElement>('#note');
 const proxyList  = $<HTMLElement>('#proxyList');
+const access     = $<HTMLElement>('#access');
 
 const globe = new Globe($<HTMLCanvasElement>('#globe'), 260);
 
@@ -150,6 +152,18 @@ async function run(msg: BgMessage, showConnecting: boolean): Promise<void> {
   }
 }
 
+// Without access to all sites Firefox won't hand Nomada their requests, so
+// nothing could be proxied or matched. Firefox lets people revoke it anytime.
+const ALL_SITES: chrome.permissions.Permissions = { origins: ['<all_urls>'] };
+
+async function checkSiteAccess(): Promise<void> {
+  access.hidden = await chrome.permissions.contains(ALL_SITES);
+}
+
+$<HTMLButtonElement>('#grantAccess').addEventListener('click', () => {
+  chrome.permissions.request(ALL_SITES).then(granted => { access.hidden = granted; }, () => {});
+});
+
 power.addEventListener('change', () => {
   if (!state) return;
   if (state.profiles.length === 0) { chrome.runtime.openOptionsPage(); return; }
@@ -173,6 +187,7 @@ setInterval(tickClock, 1000);
 // ── Start ───────────────────────────────────────────────────────────────────
 
 globe.start();
+if (TARGET === 'firefox') void checkSiteAccess();
 void globe.loadLand(chrome.runtime.getURL('land-110m.json')).catch(() => {});
 
 (async () => {

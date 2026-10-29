@@ -15,6 +15,10 @@ describe('validateProfile', () => {
     });
   });
 
+  it('accepts SOCKS5 with credentials where the browser can log in (Firefox)', () => {
+    expect(validateProfile('socks5', '127.0.0.1', 1080, '', 'admin', true)).toBeNull();
+  });
+
   it('validates host and port range', () => {
     expect(validateProfile('http', '', 8080, '', '')).toEqual({ field: 'host', message: expect.stringMatching(/Host is required/) });
     expect(validateProfile('http', 'host with space', 8080, '', '')).toMatchObject({ field: 'host' });

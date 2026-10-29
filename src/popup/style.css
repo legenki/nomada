@@ -151,6 +151,22 @@ button { font: inherit; color: inherit; }
 }
 .note[hidden] { display: none; }
 
+/* Firefox lets people take back site access after install. */
+.access {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  text-align: left;
+}
+.access[hidden] { display: none; }
+.access .primary { flex-shrink: 0; padding: 6px 14px; }
+
 /* ── Proxies ── */
 .proxies { padding: 4px 16px 16px; }
 .proxies-head {

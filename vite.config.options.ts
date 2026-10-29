@@ -1,10 +1,12 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import { renameSync, rmSync } from 'fs';
+import { define, outDir } from './vite.target';
 
 export default defineConfig({
+  define,
   build: {
-    outDir: 'dist',
+    outDir,
     emptyOutDir: false,
     rollupOptions: {
       input: { options: resolve(__dirname, 'src/options/index.html') },
@@ -19,8 +21,8 @@ export default defineConfig({
       name: 'flatten-options-html',
       closeBundle() {
         // Vite mirrors the source path (dist/src/options/index.html); the manifest wants dist/options.html.
-        renameSync(resolve(__dirname, 'dist/src/options/index.html'), resolve(__dirname, 'dist/options.html'));
-        rmSync(resolve(__dirname, 'dist/src'), { recursive: true, force: true });
+        renameSync(resolve(__dirname, outDir, 'src/options/index.html'), resolve(__dirname, outDir, 'options.html'));
+        rmSync(resolve(__dirname, outDir, 'src'), { recursive: true, force: true });
       },
     },
   ],

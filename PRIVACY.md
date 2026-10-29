@@ -2,9 +2,9 @@
 
 _Last updated: 2026-10-29_
 
-Nomada ("the extension") is a browser extension that routes your browser
-through a proxy you configure and matches your browser's reported geolocation,
-timezone and language to that proxy's location. This
+Nomada ("the extension") is a browser extension for Chrome and Firefox that
+routes your browser through a proxy you configure and matches your browser's
+reported geolocation, timezone and language to that proxy's location. This
 policy explains what data the extension handles and how.
 
 ## Summary
@@ -16,7 +16,7 @@ your own device.
 ## Data stored locally
 
 The extension saves the following on your device using the browser's local
-storage (`chrome.storage.local`). This data never leaves your browser except as
+storage (`storage.local`). This data never leaves your browser except as
 described under "Network requests" below:
 
 - Your proxy profiles, including any proxy username and password you enter
@@ -29,8 +29,9 @@ the proxy you configured. They are sent only to that proxy server, by your own
 browser, as part of normal proxy authentication.
 
 While Nomada is on, the proxy's timezone, language and coordinates are also kept
-in the browser's session storage so pages can be shown them; this is cleared
-when Nomada is turned off or the browser closes.
+where pages can be shown them — the browser's session storage in Chrome, its
+local storage in Firefox. They are removed when Nomada is turned off (and, in
+Chrome, when the browser closes).
 
 ## Network requests
 

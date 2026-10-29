@@ -9,9 +9,13 @@
     "build:content": "vite build -c vite.config.content.ts --mode spoof-main && vite build -c vite.config.content.ts --mode spoof-bridge",
     "build:popup": "vite build --config vite.config.popup.ts",
     "build:options": "vite build --config vite.config.options.ts",
+    "build:firefox": "TARGET=firefox npm run build",
     "dev:popup": "vite build --config vite.config.popup.ts --watch",
     "typecheck": "tsc --noEmit",
     "package": "npm run build && rm -f nomada-extension.zip && cd dist && zip -qrX ../nomada-extension.zip .",
+    "package:firefox": "npm run build:firefox && rm -f nomada-firefox.zip nomada-firefox-source.zip && (cd dist-firefox && zip -qrX ../nomada-firefox.zip .) && git archive --format=zip -o nomada-firefox-source.zip HEAD",
+    "lint:firefox": "npx --yes web-ext@10.8.0 lint --source-dir dist-firefox",
+    "start:firefox": "npx --yes web-ext@10.8.0 run --source-dir dist-firefox",
     "test": "vitest run",
     "test:watch": "vitest"
   },

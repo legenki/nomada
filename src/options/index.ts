@@ -1,6 +1,7 @@
 import { readData, updateProfiles } from '../lib/storage';
 import { isProtected, proxyPlaceOf, selectedProfileOf } from '../lib/state';
 import { escHtml } from '../lib/html';
+import { SOCKS_LOGIN, SUPPORTS_PAC } from '../lib/platform';
 import { flagHtml, paintFlags } from '../lib/flags';
 import type { ActionResult, BgMessage, DetectResult, ProxyConfig, ProxyProfile, WooPortalData } from '../types';
 import { parseProxyString } from './parse';
@@ -61,7 +62,7 @@ function send<T>(msg: BgMessage): Promise<T | undefined> {
   }));
 }
 
-/** Tell the background so an edited/deleted active profile is re-applied to Chrome. */
+/** Tell the background so an edited/deleted active profile is re-applied to the browser. */
 const notifyProfilesChanged = () => send<ActionResult>({ type: 'PROFILES_CHANGED' });
 
 // ── List ────────────────────────────────────────────────────────────────────
@@ -135,9 +136,10 @@ function updateTypeFields(): void {
   const type = currentType();
   byId('addrRow').hidden = type === 'pac';
   byId('pacRow').hidden = type !== 'pac';
-  // Chrome can't answer a SOCKS5 auth challenge, so credentials are never saved for it.
-  byId('authRow').hidden = type === 'socks5';
-  byId('socksNote').hidden = type !== 'socks5';
+  // Chrome can't answer a SOCKS5 auth challenge, so there credentials are never saved for it.
+  const socksWithoutLogin = type === 'socks5' && !SOCKS_LOGIN;
+  byId('authRow').hidden = socksWithoutLogin;
+  byId('socksNote').hidden = !socksWithoutLogin;
   byId('autoHint').hidden = type !== 'auto';
   updateNamePlaceholder();
 }
@@ -192,13 +194,17 @@ function applyPaste(final: boolean): boolean {
     else pasteHint.hidden = true;
     return false;
   }
-  if (parsed.type === 'socks5' && parsed.username) {
+  if (parsed.type === 'pac' && !SUPPORTS_PAC) {
+    showPasteHint("Firefox can't use PAC scripts here. Paste the proxy's own address instead.", 'error');
+    return false;
+  }
+  if (parsed.type === 'socks5' && parsed.username && !SOCKS_LOGIN) {
     showPasteHint("Chrome can't sign in to SOCKS5 proxies, so one that needs a username and password won't work.", 'error');
     return false;
   }
   // Without a scheme the text doesn't say the type: keep the chosen one when it fits.
   const current = currentType();
-  const keep = current !== 'pac' && !(current === 'socks5' && parsed.type !== 'pac' && parsed.username);
+  const keep = current !== 'pac' && !(current === 'socks5' && parsed.type !== 'pac' && parsed.username && !SOCKS_LOGIN);
   setType(parsed.type ?? (keep ? current : 'auto'));
   if (parsed.type === 'pac') {
     f.pacUrl.value = parsed.pacUrl;
@@ -296,7 +302,7 @@ async function saveProfile(): Promise<void> {
   const portText = f.port.value.trim();
   const port = portText ? Number(portText) : NaN;
   const pacUrl = f.pacUrl.value.trim();
-  const auth = formType === 'socks5'
+  const auth = formType === 'socks5' && !SOCKS_LOGIN
     ? { username: '', password: '' }
     : { username: f.username.value, password: f.password.value };
   // Auto needs a host and port like any proxy server.
@@ -377,6 +383,7 @@ async function deleteProfile(): Promise<void> {
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
+byId('pacOption').hidden = !SUPPORTS_PAC;
 addBtn.addEventListener('click', () => openDialog());
 list.addEventListener('click', e => {
   const target = e.target as Element;

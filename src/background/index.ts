@@ -3,8 +3,9 @@ import { activeProfileOf, isProtected, proxyPlaceOf, selectedProfileOf } from '.
 import { applyProxy } from './proxy';
 import { applySpoof } from './spoof';
 import { refreshIcon } from './icon';
-import { lookupDirectPlace, lookupProxyPlace } from './places';
+import { LOOKUP_HOST, lookupDirectPlace, lookupProxyPlace } from './places';
 import { answerProbeChallenge, detectProxyType, noteProxyError } from './detect';
+import { installFirefoxProxy } from './firefox-proxy';
 import { isFresh, spoofConfigOf, withProxyPlace } from './state-helpers';
 import type { ActionResult, BgMessage, BgState, WooPortalData } from '../types';
 
@@ -93,7 +94,14 @@ async function refreshProxyPlace(force = false): Promise<ActionResult> {
 
 // ── Actions ─────────────────────────────────────────────────────────────────
 
+const ALL_SITES: chrome.permissions.Permissions = { origins: ['<all_urls>'] };
+
 async function enable(): Promise<ActionResult> {
+  // Firefox only routes requests to sites Nomada may access, and people can
+  // revoke that: switching on without it would leave traffic unproxied.
+  if (__TARGET__ === 'firefox' && !(await chrome.permissions.contains(ALL_SITES))) {
+    return { success: false, error: 'Allow Nomada to access all sites first' };
+  }
   const data = await readData();
   const profileId = selectedProfileOf(data)?.id ?? data.profiles[0]?.id;
   if (!profileId) return { success: false, error: 'Add a proxy first' };
@@ -150,12 +158,19 @@ async function getState(): Promise<BgState> {
   };
 }
 
-// ── Chrome events ───────────────────────────────────────────────────────────
+// ── Browser events ──────────────────────────────────────────────────────────
 
-chrome.proxy.onProxyError.addListener(details => {
-  noteProxyError(details.error);
-  console.error('[Nomada] proxy error:', details.error);
-});
+if (__TARGET__ === 'firefox') {
+  // Registered first thing on every start: Firefox wakes this page for it.
+  installFirefoxProxy();
+  // Firefox has no proxy.onProxyError; an Auto check reads its lookup's network error.
+  chrome.webRequest.onErrorOccurred.addListener(d => noteProxyError(d.error), { urls: [`https://${LOOKUP_HOST}/*`] });
+} else {
+  chrome.proxy.onProxyError.addListener(details => {
+    noteProxyError(details.error);
+    console.error('[Nomada] proxy error:', details.error);
+  });
+}
 
 // Chrome drops session rules, session storage and non-persistent content
 // scripts on restart, and may drop extension settings on reload/update — so
@@ -167,6 +182,9 @@ async function reconcile(): Promise<void> {
   else await refreshRealPlace();
 }
 chrome.runtime.onStartup.addListener(() => { void reconcile(); });
+if (__TARGET__ === 'firefox') {
+  chrome.permissions.onRemoved.addListener(removed => { if (removed.origins?.length) void disable(); });
+}
 chrome.runtime.onInstalled.addListener(() => { void reconcile(); });
 
 // Sync the icon whenever the service worker (re)starts.
@@ -181,31 +199,37 @@ const forgetAuth = (d: { requestId: string }) => { answeredAuth.delete(d.request
 chrome.webRequest.onCompleted.addListener(forgetAuth, { urls: ['<all_urls>'] });
 chrome.webRequest.onErrorOccurred.addListener(forgetAuth, { urls: ['<all_urls>'] });
 
-chrome.webRequest.onAuthRequired.addListener(
-  (details, callback) => {
-    if (!details.isProxy) { callback!({}); return; }
-    const probeAnswer = answerProbeChallenge(details.challenger?.host);
-    if (probeAnswer) { callback!(probeAnswer); return; }
-    if (answeredAuth.has(details.requestId)) { callback!({ cancel: true }); return; }
-    readData().then(data => {
-      const profile = activeProfileOf(data);
-      const auth = profile?.config.auth;
-      // Only hand the credentials to the proxy they were configured for
-      // (a PAC script can route through other proxies).
-      const challenger = details.challenger?.host.toLowerCase();
-      const host = profile?.config.host.trim().toLowerCase();
-      const hostOk = profile?.config.type === 'pac' ? !host || challenger === host : challenger === host;
-      if (auth?.username && hostOk) {
-        answeredAuth.add(details.requestId);
-        callback!({ authCredentials: { username: auth.username, password: auth.password } });
-      } else {
-        callback!({});
-      }
-    }, () => callback!({}));
-  },
-  { urls: ['<all_urls>'] },
-  ['asyncBlocking'],
-);
+async function answerAuth(details: chrome.webRequest.WebAuthenticationChallengeDetails): Promise<chrome.webRequest.BlockingResponse> {
+  if (!details.isProxy) return {};
+  const probeAnswer = answerProbeChallenge(details.challenger?.host);
+  if (probeAnswer) return probeAnswer;
+  if (answeredAuth.has(details.requestId)) return { cancel: true };
+  const profile = activeProfileOf(await readData());
+  const auth = profile?.config.auth;
+  // Only hand the credentials to the proxy they were configured for
+  // (a PAC script can route through other proxies).
+  const challenger = details.challenger?.host.toLowerCase();
+  const host = profile?.config.host.trim().toLowerCase();
+  const hostOk = profile?.config.type === 'pac' ? !host || challenger === host : challenger === host;
+  if (!auth?.username || !hostOk) return {};
+  answeredAuth.add(details.requestId);
+  return { authCredentials: { username: auth.username, password: auth.password } };
+}
+
+if (__TARGET__ === 'firefox') {
+  // Firefox has no asyncBlocking: a blocking listener may return a Promise instead.
+  chrome.webRequest.onAuthRequired.addListener(
+    details => answerAuth(details).catch(() => ({})) as unknown as chrome.webRequest.BlockingResponse,
+    { urls: ['<all_urls>'] },
+    ['blocking'],
+  );
+} else {
+  chrome.webRequest.onAuthRequired.addListener(
+    (details, callback) => { answerAuth(details).then(callback, () => callback!({})); },
+    { urls: ['<all_urls>'] },
+    ['asyncBlocking'],
+  );
+}
 
 // ── Messages from popup / options ───────────────────────────────────────────
 

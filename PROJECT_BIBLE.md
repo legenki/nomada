@@ -7,6 +7,15 @@ Nomada — расширение Chrome (Manifest V3) на TypeScript + Vite. О�
 
 **Без `chrome.debugger`:** подмена делается скриптом в мире страницы, поэтому Chrome не показывает баннер «расширение отлаживает браузер».
 
+## Chrome и Firefox
+Одна кодовая база, платформа выбирается при сборке: `TARGET=firefox` → константа `__TARGET__` (`vite.target.ts`), вывод в `dist-firefox/`, манифест `manifest.firefox.json`; ветки другого браузера выпадают из бандла. Тесты собираются как Chrome; Firefox-пути проверяются через параметры (`probeOrder`, `validateProfile`, `detectProxyType`) и модуль `firefox-proxy.ts`. Подробности — `docs/superpowers/specs/2026-10-29-firefox-port-design.md`, сборка для рецензентов AMO — `BUILD.md`.
+- Фон: Chrome — service worker; Firefox — фоновая страница (`background.scripts`).
+- Маршрутизация: Chrome — `chrome.proxy.settings` (fixed_servers / PAC); Firefox — `proxy.onRequest` (`firefox-proxy.ts`): постоянное событие, будит страницу; при включённой Nomada ответ `[proxyInfo, null]` — без запасного прямого соединения; при выключенной `undefined` — настройки браузера. PAC в Firefox не поддерживается.
+- SOCKS5 с логином работает только в Firefox (`SOCKS_LOGIN` в `src/lib/platform.ts`).
+- Проверка Auto: Chrome подменяет PAC так, чтобы через кандидата шёл только запрос к ipwho.is; Firefox отдаёт кандидата из `onRequest` для этого запроса (`probe-state.ts`).
+- Конфиг подмены для content scripts: Chrome — `storage.session` (+ `setAccessLevel`), Firefox — `storage.local` (у него нет `setAccessLevel`).
+- Firefox даёт отозвать доступ ко всем сайтам: без него Nomada не включается, при отзыве выключается, попап предлагает «Allow».
+
 ## Структура директорий
 - `/src/background/` — Service Worker: состояние, прокси, поиск места по IP, управление подменой.
   - `index.ts` — `commit()` (все переходы состояния), действия, сообщения, авторизация прокси.
@@ -47,5 +56,7 @@ Nomada — расширение Chrome (Manifest V3) на TypeScript + Vite. О�
 - `npm run build` — typecheck + сборка background, content scripts, popup и options в чистый `dist/`.
 - `npm run typecheck` — `tsc --noEmit` по `src` и `tests`.
 - `npm run package` — сборка + `nomada-extension.zip` для Chrome Web Store (zip в git не хранится).
+- `npm run build:firefox` / `npm run package:firefox` — версия для Firefox в `dist-firefox/`, `nomada-firefox.zip` и `nomada-firefox-source.zip` (исходники для AMO, `git archive HEAD`).
+- `npm run lint:firefox` / `npm run start:firefox` — `web-ext lint` / запуск Firefox с расширением.
 - `npm run dev:popup` — Запуск сборки попапа в режиме watch (удобно для стилизации).
 - `npm run test` — Запуск тестов на Vitest.

@@ -1,5 +1,6 @@
 import type { ActionResult, ProxyConfig, ProxyProfile, WooPortalData } from '../types';
 import { activeProfileOf } from '../lib/state';
+import { setFirefoxRoute } from './firefox-proxy';
 
 /** A PAC route to one proxy server, e.g. `PROXY host:port`. */
 export function pacRoute(type: Exclude<ProxyConfig['type'], 'pac'>, host: string, port: number): string {
@@ -36,6 +37,12 @@ function toPacUrl(input: string): string | null {
   return null;
 }
 
+/** Throw a user-facing error if the profile's proxy server can't be used. */
+function checkServer({ host, port }: ProxyConfig): void {
+  if (!host) throw new Error('Proxy host is missing');
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Proxy port must be 1–65535');
+}
+
 /** Translate a profile into a chrome.proxy config, or throw a user-facing error. */
 export function buildProxyConfig(profile: ProxyProfile): chrome.proxy.ProxyConfig {
   const { type, host, port, routingRules } = profile.config;
@@ -44,8 +51,7 @@ export function buildProxyConfig(profile: ProxyProfile): chrome.proxy.ProxyConfi
     if (!url) throw new Error('Invalid PAC URL');
     return { mode: 'pac_script', pacScript: { url } };
   }
-  if (!host) throw new Error('Proxy host is missing');
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Proxy port must be 1–65535');
+  checkServer(profile.config);
   if (routingRules?.enabled && routingRules.domains.length > 0) {
     return { mode: 'pac_script', pacScript: { data: generatePAC(profile) } };
   }
@@ -62,7 +68,12 @@ export function buildProxyConfig(profile: ProxyProfile): chrome.proxy.ProxyConfi
 export async function applyProxy(data: WooPortalData): Promise<ActionResult> {
   const profile = activeProfileOf(data);
   try {
-    if (profile) {
+    if (__TARGET__ === 'firefox') {
+      // Firefox asks proxy.onRequest about every request (firefox-proxy.ts).
+      if (profile?.config.type === 'pac') throw new Error("Firefox can't use PAC-script proxies — pick HTTP, HTTPS or SOCKS5");
+      if (profile) checkServer(profile.config);
+      setFirefoxRoute(profile);
+    } else if (profile) {
       await chrome.proxy.settings.set({ value: buildProxyConfig(profile), scope: 'regular' });
     } else {
       await chrome.proxy.settings.clear({ scope: 'regular' });

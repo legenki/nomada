@@ -15,6 +15,7 @@ const setProxy = vi.fn(async (_: unknown) => {});
 vi.stubGlobal('chrome', { proxy: { settings: { set: (d: unknown) => setProxy(d) } } });
 
 const { answerProbeChallenge, buildProbePac, detectProxyType, noteProxyError, probeOrder } = await import('../src/background/detect');
+const { activeProbe } = await import('../src/background/probe-state');
 
 const place = (ip: string): Place => ({
   ip, city: 'Berlin', country: 'Germany', countryCode: 'DE', lat: 52.5, lon: 13.4,
@@ -49,6 +50,10 @@ describe('probeOrder', () => {
   it('tries HTTP first and skips SOCKS5 when there is a login', () => {
     expect(probeOrder(false)).toEqual(['http', 'socks5', 'https']);
     expect(probeOrder(true)).toEqual(['http', 'https']);
+  });
+
+  it('keeps SOCKS5 with a login where the browser can use it (Firefox)', () => {
+    expect(probeOrder(true, true)).toEqual(['http', 'socks5', 'https']);
   });
 });
 
@@ -114,6 +119,15 @@ describe('detectProxyType', () => {
     expect(tried()).toEqual(['PROXY']);
   });
 
+  it('counts proxy errors that arrive just after the lookup fails, as browsers report them', async () => {
+    lookup.mockImplementation(async () => {
+      setTimeout(() => noteProxyError('net::ERR_PROXY_CONNECTION_FAILED'), 20);
+      return null;
+    });
+    expect((await detectProxyType(target, data())).error).toMatch(/^Can't connect to Proxy\.Example:3128/);
+    expect(tried()).toEqual(['PROXY']);
+  });
+
   it('stops at once on a timeout', async () => {
     lookup.mockResolvedValue('timeout');
     expect((await detectProxyType(target, data())).error).toMatch(/didn't answer/);
@@ -138,5 +152,41 @@ describe('detectProxyType', () => {
     setProxy.mockRejectedValueOnce(new Error('controlled by policy'));
     await expect(detectProxyType(target, data())).rejects.toThrow('controlled by policy');
     expect(applyProxy).toHaveBeenCalled();
+  });
+});
+
+describe('detectProxyType in Firefox', () => {
+  const login = { ...target, username: 'alice', password: 'x' };
+
+  it("leaves the browser's proxy setting alone: proxy.onRequest routes the lookup from the probe", async () => {
+    const seen: unknown[] = [];
+    lookup.mockImplementation(async () => { seen.push({ ...activeProbe() }); return place('9.9.9.9'); });
+    const result = await detectProxyType(login, data(), 'firefox');
+    expect(result).toEqual({ success: true, type: 'http', place: place('9.9.9.9') });
+    expect(seen).toEqual([{ type: 'http', host: 'proxy.example', port: 3128, username: 'alice', password: 'x', challenges: 0 }]);
+    expect(setProxy).not.toHaveBeenCalled();
+    expect(applyProxy).not.toHaveBeenCalled();
+    expect(activeProbe()).toBeNull();
+  });
+
+  it('tries SOCKS5 even with a login', async () => {
+    lookup.mockResolvedValueOnce(null).mockResolvedValueOnce(place('9.9.9.9'));
+    expect((await detectProxyType(login, data(), 'firefox')).type).toBe('socks5');
+  });
+
+  it("doesn't blame SOCKS5 logins when SOCKS5 was tried", async () => {
+    lookup.mockResolvedValue(null);
+    expect((await detectProxyType(login, data(), 'firefox')).error).toMatch(/^Couldn't get through as HTTP, SOCKS5 or HTTPS/);
+  });
+
+  it("doesn't mistake a refused SOCKS5 login for a dead proxy", async () => {
+    // Firefox reports a rejected SOCKS5 login as NS_ERROR_CONNECTION_REFUSED.
+    lookup.mockImplementation(async () => { setTimeout(() => noteProxyError('NS_ERROR_CONNECTION_REFUSED'), 20); return null; });
+    expect((await detectProxyType(login, data(), 'firefox')).error).toMatch(/username and password/);
+  });
+
+  it("recognises Firefox's error for a proxy it can't reach", async () => {
+    lookup.mockImplementation(async () => { noteProxyError('NS_ERROR_PROXY_CONNECTION_REFUSED'); return null; });
+    expect((await detectProxyType(target, data(), 'firefox')).error).toMatch(/^Can't connect to Proxy\.Example:3128/);
   });
 });

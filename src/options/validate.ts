@@ -1,4 +1,5 @@
 import type { ProxyProfile } from '../types';
+import { SOCKS_LOGIN } from '../lib/platform';
 
 export interface ValidationError {
   /** The form field to highlight. */
@@ -13,8 +14,9 @@ export function validateProfile(
   port: number,
   pacUrl: string,
   user = '',
+  socksLogin = SOCKS_LOGIN,
 ): ValidationError | null {
-  if (type === 'socks5' && user.trim()) {
+  if (type === 'socks5' && user.trim() && !socksLogin) {
     return {
       field: 'username',
       message: 'Chrome does not support username/password authentication for SOCKS5 proxies. Use an unauthenticated SOCKS5 proxy or HTTP/HTTPS.',
