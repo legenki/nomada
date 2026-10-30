@@ -354,7 +354,7 @@ async function saveProfile(): Promise<void> {
       color: existing?.color ?? '#808080',
       config,
       exitCountry: found?.place?.countryCode
-        ? { code: found.place.countryCode, name: found.place.country }
+        ? { code: found.place.countryCode, name: found.place.country, lat: found.place.lat, lon: found.place.lon }
         : sameServer ? existing?.exitCountry : undefined,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,

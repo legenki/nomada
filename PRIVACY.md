@@ -42,7 +42,9 @@ approximate location (country, city, coordinates, timezone) of an IP address:
   every 10 minutes, to show where you are.
 - **The proxy's exit IP** — when you switch Nomada on or change proxies, and when
   you open the popup while it's on (at most once every 10 minutes), to match
-  your browser to the proxy's location.
+  your browser to the proxy's location. With Failover on, also when a proxy
+  reports an error (at most every 30 seconds) and for each backup tried, through
+  that proxy only.
 - **A proxy you save with the "Auto" type** — once per type tried, through that
   proxy only, to find out which proxy type it speaks and where it exits.
 

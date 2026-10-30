@@ -11,10 +11,12 @@ export interface GlobeScene {
   active: boolean;
   /** Waiting for the proxy to answer: the arc pulses. */
   connecting: boolean;
+  /** Failover: the other proxies, faint, or marked when they didn't answer. */
+  others?: (LatLon & { down: boolean })[];
 }
 
 interface Palette {
-  dot: string; sphere: string; sphereEdge: string; accent: string; muted: string;
+  dot: string; sphere: string; sphereEdge: string; accent: string; muted: string; warn: string;
   glow: string; glowFade: string; glowOn: string; glowOnFade: string;
 }
 
@@ -157,6 +159,7 @@ export class Globe {
       glowOnFade: fade(v('--globe-glow-on', 'rgba(22,163,74,0.3)')),
       accent: v('--globe-accent', '#1f9d55'),
       muted: v('--globe-muted', '#5b6673'),
+      warn: v('--warn', '#b42318'),
     };
   }
 
@@ -230,7 +233,8 @@ export class Globe {
     }
     ctx.globalAlpha = 1;
 
-    const { real, proxy, active, connecting } = this.scene;
+    const { real, proxy, active, connecting, others } = this.scene;
+    for (const o of others ?? []) this.drawMarker(o, o.down ? c.warn : c.muted, false, now, 0.55);
     if (real && proxy && (active || connecting)) this.drawArc(real, proxy, now, connecting);
     if (real) this.drawMarker(real, active || connecting ? c.muted : c.accent, !(active || connecting), now, 0.75);
     if (proxy && (active || connecting)) this.drawMarker(proxy, c.accent, true, now, 1);

@@ -10,7 +10,7 @@ export function isFresh(p: Place | undefined): boolean {
 
 /** Store where a profile's proxy exits, and remember that country on the profile. */
 export function withProxyPlace(data: WooPortalData, profileId: string, place: Place): WooPortalData {
-  const country = place.countryCode ? { code: place.countryCode, name: place.country } : undefined;
+  const country = place.countryCode ? { code: place.countryCode, name: place.country, lat: place.lat, lon: place.lon } : undefined;
   return {
     ...data,
     proxyPlace: { ...place, profileId },

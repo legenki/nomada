@@ -23,6 +23,9 @@ export interface Country {
   /** ISO 3166-1 alpha-2, upper case. */
   code: string;
   name: string;
+  /** Where the exit IP is, once looked up (public proxies only know their country). */
+  lat?: number;
+  lon?: number;
 }
 
 export interface ProxyProfile {
@@ -59,6 +62,19 @@ export interface ProxyPlace extends Place {
   profileId: string;
 }
 
+/** Moving to the next proxy when the one in use stops answering. */
+export interface FailoverState {
+  enabled: boolean;
+  /** Profile ids, first choice first. Profiles missing here come last. */
+  order: string[];
+  /** Proxies that didn't answer last time they were tried. */
+  down: string[];
+  /** The last automatic move (profile ids), for the popup to mention. */
+  moved?: { from: string; to: string };
+  /** Every proxy is silent: Nomada stays on and traffic is blocked rather than exposed. */
+  exhausted?: boolean;
+}
+
 export interface WooPortalData {
   version: 3;
   /** Master switch: ON routes traffic through the selected proxy and matches its location. */
@@ -70,6 +86,7 @@ export interface WooPortalData {
   realPlace?: Place;
   /** Location of the selected proxy's exit IP. */
   proxyPlace?: ProxyPlace;
+  failover?: FailoverState;
   settings: {
     notifyChange: boolean;
     notifyError: boolean;
@@ -131,9 +148,20 @@ export type BgMessage =
   | { type: 'DISABLE' }
   | { type: 'SELECT_PROFILE'; payload: { id: string } }
   | { type: 'PROFILES_CHANGED' }
-  | { type: 'DETECT_PROXY'; payload: ProbeTarget };
+  | { type: 'DETECT_PROXY'; payload: ProbeTarget }
+  | { type: 'SET_FAILOVER'; payload: { enabled?: boolean; order?: string[] } }
+  | { type: 'RETRY_FAILOVER' };
 
 export interface BgState {
+  failover: {
+    enabled: boolean;
+    /** Profile ids taking part, in order. */
+    chain: string[];
+    down: string[];
+    /** Names, for the popup's note. */
+    moved: { from: string; to: string } | null;
+    exhausted: boolean;
+  };
   enabled: boolean;
   profiles: ProxyProfile[];
   activeProfile: ProxyProfile | null;

@@ -22,7 +22,15 @@ function sendMsg<T = unknown>(msg: BgMessage, retries = 3): Promise<T> {
 
 const $ = <T extends Element>(sel: string) => document.querySelector<T>(sel)!;
 
-const power      = $<HTMLInputElement>('#power');
+const connDirect = $<HTMLInputElement>('#connDirect');
+const connProxy  = $<HTMLInputElement>('#connProxy');
+const mode       = $<HTMLElement>('#mode');
+const modeSingle = $<HTMLInputElement>('#modeSingle');
+const modeFail   = $<HTMLInputElement>('#modeFailover');
+const moved      = $<HTMLElement>('#moved');
+const blocked    = $<HTMLElement>('#blocked');
+const foot       = $<HTMLElement>('#failoverFoot');
+const footHint   = $<HTMLElement>('#failoverHint');
 const status     = $<HTMLElement>('#status');
 const statusText = $<HTMLElement>('#statusText');
 const placeEl    = $<HTMLElement>('#place');
@@ -72,7 +80,38 @@ function proxyMeta(p: ProxyProfile): string {
   return p.config.type === 'pac' ? `PAC · ${p.config.pacUrl}` : `${p.config.type.toUpperCase()} · ${p.config.host}:${p.config.port}`;
 }
 
-function renderProxies(s: BgState): void {
+/** Failover: the proxies in the order they'd be used, with what each is doing now. */
+function renderChain(s: BgState, on: boolean): void {
+  const profiles = s.failover.chain.flatMap(id => s.profiles.filter(p => p.id === id));
+  proxyList.innerHTML = profiles.map((p, i) => {
+    const selected = p.id === s.activeProfile?.id;
+    const state = s.failover.down.includes(p.id) ? 'down' : !selected ? 'backup' : on ? 'active' : 'next';
+    const tag = { down: 'NO ANSWER', backup: 'BACKUP', active: 'ACTIVE', next: 'NEXT' }[state];
+    return `
+    <div class="fo-row" draggable="true" data-id="${escHtml(p.id)}" data-state="${state}">
+      <button class="proxy" type="button" role="radio" data-id="${escHtml(p.id)}"
+              aria-checked="${selected}"${p.exitCountry ? ` data-flag="${escHtml(p.exitCountry.code)}"` : ''}>
+        <span class="fo-n">${i + 1}</span>
+        ${flagHtml(p.exitCountry)}
+        <span class="proxy-text">
+          <span class="fo-name"><span class="fo-name-text">${escHtml(p.name)}</span><span class="fo-tag">${tag}</span></span>
+          <span class="proxy-meta">${escHtml(proxyMeta(p))}</span>
+        </span>
+      </button>
+      <button class="grip" type="button" data-id="${escHtml(p.id)}" aria-label="Move ${escHtml(p.name)} with the arrow keys" title="Drag to reorder">⋮⋮</button>
+    </div>`;
+  }).join('');
+  paintFlags(proxyList);
+  footHint.textContent = on ? 'If a proxy stops answering, Nomada moves to the next one.' : 'Switch to Proxy to go through them, in this order.';
+}
+
+function renderProxies(s: BgState, on: boolean): void {
+  mode.hidden = s.failover.chain.length === 0;
+  modeSingle.checked = !s.failover.enabled;
+  modeFail.checked = s.failover.enabled;
+  const chained = s.failover.enabled && s.failover.chain.length > 0;
+  foot.hidden = !chained;
+  if (chained) { renderChain(s, on); return; }
   if (s.profiles.length === 0) {
     proxyList.innerHTML = `
       <div class="empty">
@@ -94,18 +133,38 @@ function renderProxies(s: BgState): void {
   paintFlags(proxyList);
 }
 
+/** Where the other proxies are on the globe; ones never used yet have no known point. */
+function otherProxies(s: BgState) {
+  return s.profiles.flatMap(p => {
+    const { lat, lon } = p.exitCountry ?? {};
+    const isRoute = p.id === s.activeProfile?.id && !s.failover.exhausted;
+    if (lat === undefined || lon === undefined || isRoute || !s.failover.chain.includes(p.id)) return [];
+    return [{ lat, lon, down: s.failover.down.includes(p.id) }];
+  });
+}
+
 function render(): void {
   if (!state) return;
   const s = state;
   const on = s.enabled && !!s.activeProfile;
+  const { exhausted } = s.failover;
 
-  power.checked = on || connecting;
-  power.disabled = s.profiles.length === 0;
+  connProxy.checked = on || connecting;
+  connDirect.checked = !connProxy.checked;
+  connProxy.disabled = s.profiles.length === 0;
+  blocked.hidden = !exhausted || !on || connecting;
+  moved.hidden = !s.failover.moved || !on;
+  moved.textContent = s.failover.moved ? `${s.failover.moved.from} stopped answering — moved to ${s.failover.moved.to}` : '';
+  if (!blocked.hidden) showNote(null);
 
   if (connecting) {
     status.dataset.state = 'connecting';
     statusText.textContent = `Connecting via ${s.activeProfile?.name ?? 'proxy'}…`;
     showPlace(s.proxyPlace, 'Locating…');
+  } else if (on && exhausted) {
+    status.dataset.state = 'warn';
+    statusText.textContent = 'No proxy is answering';
+    showPlace(s.proxyPlace, 'Blocked');
   } else if (on && s.protected) {
     status.dataset.state = 'on';
     statusText.textContent = `Protected · via ${s.activeProfile!.name}`;
@@ -121,12 +180,14 @@ function render(): void {
   }
 
   globe.setScene({
-    real: s.realPlace,
+    // Blocked: a marker on the real place would read as "you're connected from here".
+    real: on && exhausted ? null : s.realPlace,
     proxy: s.proxyPlace,
-    active: on && s.protected,
-    connecting: connecting || (on && !s.protected),
+    active: on && s.protected && !exhausted,
+    connecting: connecting || (on && !s.protected && !exhausted),
+    others: on && s.failover.enabled ? otherProxies(s) : [],
   });
-  renderProxies(s);
+  renderProxies(s, on);
 }
 
 // ── Actions ─────────────────────────────────────────────────────────────────
@@ -164,10 +225,76 @@ $<HTMLButtonElement>('#grantAccess').addEventListener('click', () => {
   chrome.permissions.request(ALL_SITES).then(granted => { access.hidden = granted; }, () => {});
 });
 
-power.addEventListener('change', () => {
-  if (!state) return;
-  if (state.profiles.length === 0) { chrome.runtime.openOptionsPage(); return; }
-  void run({ type: power.checked ? 'ENABLE' : 'DISABLE' }, power.checked);
+connDirect.addEventListener('change', () => { void run({ type: 'DISABLE' }, false); });
+connProxy.addEventListener('change', () => { void run({ type: 'ENABLE' }, true); });
+$<HTMLButtonElement>('#retry').addEventListener('click', () => { void run({ type: 'RETRY_FAILOVER' }, true); });
+
+async function setFailover(payload: { enabled?: boolean; order?: string[] }): Promise<void> {
+  await sendMsg({ type: 'SET_FAILOVER', payload }).catch(() => {});
+  await refreshState().catch(() => {});
+}
+
+modeSingle.addEventListener('change', () => { void setFailover({ enabled: false }); });
+modeFail.addEventListener('change', () => { void setFailover({ enabled: true }); });
+$<HTMLButtonElement>('#addBackup').addEventListener('click', () => chrome.runtime.openOptionsPage());
+
+/** Save a new order, showing it straight away. */
+function reorder(order: string[]): Promise<void> {
+  if (state) { state.failover.chain = order; render(); }
+  return setFailover({ order });
+}
+
+function reordered(order: string[], id: string, targetId: string, after: boolean): string[] {
+  const rest = order.filter(x => x !== id);
+  rest.splice(rest.indexOf(targetId) + (after ? 1 : 0), 0, id);
+  return rest;
+}
+
+let draggingId: string | null = null;
+const rowOf = (e: Event) => (e.target as Element).closest<HTMLElement>('.fo-row');
+const clearDrop = () => proxyList.querySelectorAll<HTMLElement>('[data-drop]').forEach(r => { delete r.dataset.drop; });
+const isAfter = (e: DragEvent, row: HTMLElement) => { const box = row.getBoundingClientRect(); return e.clientY > box.top + box.height / 2; };
+
+proxyList.addEventListener('dragstart', e => {
+  const row = rowOf(e);
+  if (!row) return;
+  draggingId = row.dataset.id!;
+  row.classList.add('dragging');
+  e.dataTransfer?.setData('text/plain', draggingId);
+});
+proxyList.addEventListener('dragover', e => {
+  const row = rowOf(e);
+  if (!row || !draggingId || row.dataset.id === draggingId) return;
+  e.preventDefault();
+  clearDrop();
+  row.dataset.drop = isAfter(e, row) ? 'after' : 'before';
+});
+proxyList.addEventListener('drop', e => {
+  const row = rowOf(e);
+  if (!row || !draggingId || !state || row.dataset.id === draggingId) return;
+  e.preventDefault();
+  void reorder(reordered(state.failover.chain, draggingId, row.dataset.id!, isAfter(e, row)));
+});
+proxyList.addEventListener('dragend', () => {
+  draggingId = null;
+  clearDrop();
+  proxyList.querySelector('.dragging')?.classList.remove('dragging');
+});
+proxyList.addEventListener('keydown', e => {
+  const grip = (e.target as Element).closest<HTMLElement>('.grip');
+  if (!grip || !state || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+  e.preventDefault();
+  const id = grip.dataset.id!;
+  const { chain } = state.failover;
+  const to = chain.indexOf(id) + (e.key === 'ArrowUp' ? -1 : 1);
+  if (to < 0 || to >= chain.length) return;
+  const order = reordered(chain, id, chain[to], e.key === 'ArrowDown');
+  void reorder(order).then(() => proxyList.querySelector<HTMLElement>(`.grip[data-id="${CSS.escape(id)}"]`)?.focus());
+});
+
+// Failover moves happen in the background, also while the popup is open.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && 'wooportal-data' in changes && !connecting) void refreshState().catch(() => {});
 });
 
 proxyList.addEventListener('click', e => {

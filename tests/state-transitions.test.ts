@@ -96,13 +96,13 @@ describe('withProxyPlace', () => {
   it("stores the proxy's place and remembers its country on the profile", () => {
     const next = withProxyPlace(baseData, 'p2', berlin);
     expect(next.proxyPlace).toEqual({ ...berlin, profileId: 'p2' });
-    expect(next.profiles[1].exitCountry).toEqual({ code: 'DE', name: 'Germany' });
+    expect(next.profiles[1].exitCountry).toEqual({ code: 'DE', name: 'Germany', lat: place.lat, lon: place.lon });
     expect(next.profiles[0]).toBe(baseData.profiles[0]);
   });
 
   it('keeps the remembered country when the lookup has none', () => {
     const known = withProxyPlace(baseData, 'p1', berlin);
     const next = withProxyPlace(known, 'p1', { ...berlin, countryCode: '' });
-    expect(next.profiles[0].exitCountry).toEqual({ code: 'DE', name: 'Germany' });
+    expect(next.profiles[0].exitCountry).toEqual({ code: 'DE', name: 'Germany', lat: place.lat, lon: place.lon });
   });
 });

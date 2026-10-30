@@ -6,6 +6,8 @@ import { refreshIcon } from './icon';
 import { LOOKUP_HOST, lookupDirectPlace, lookupProxyPlace } from './places';
 import { answerProbeChallenge, detectProxyType, noteProxyError } from './detect';
 import { installFirefoxProxy } from './firefox-proxy';
+import { createFailover, failoverChain, isProxyFailure, withDirect, withFailoverSettings, withoutMoves } from './failover';
+import { activeProbe } from './probe-state';
 import { isFresh, spoofConfigOf, withProxyPlace } from './state-helpers';
 import type { ActionResult, BgMessage, BgState, WooPortalData } from '../types';
 
@@ -57,6 +59,16 @@ function commit(update: (d: WooPortalData) => WooPortalData, force: Reapply = {}
 
 
 
+const failover = createFailover({
+  read: readData,
+  commit: update => commit(update),
+  lookup: async realIp => { await whenIdle(); return lookupProxyPlace(realIp); },
+  isOnline: () => navigator.onLine,
+  probing: () => activeProbe() !== null,
+  now: () => Date.now(),
+  wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+});
+
 // ── Places ──────────────────────────────────────────────────────────────────
 
 /** Look up the user's own location. Only meaningful while no proxy is set. */
@@ -73,7 +85,9 @@ async function refreshRealPlace(force = false): Promise<void> {
  * If the proxy can't reach the internet, switch back off rather than leave the
  * browser stuck behind a dead proxy.
  */
-async function refreshProxyPlace(force = false): Promise<ActionResult> {
+async function refreshProxyPlace(force = false, fromDirect = false): Promise<ActionResult> {
+  // This look-up tests the proxy itself; errors it causes aren't news.
+  if (force) failover.hold();
   await whenIdle();
   const data = await readData();
   const profile = activeProfileOf(data);
@@ -81,6 +95,11 @@ async function refreshProxyPlace(force = false): Promise<ActionResult> {
 
   const place = await lookupProxyPlace(data.realPlace?.ip);
   if (!place) {
+    if (data.failover?.enabled) {
+      const result = await failover.moveOn(profile.id, { offIfAllDown: fromDirect });
+      if (!(await readData()).enabled) void refreshRealPlace();
+      return result;
+    }
     if (proxyPlaceOf(data)) {
       return { success: false, error: `“${profile.name}” location re-check failed` };
     }
@@ -103,22 +122,22 @@ async function enable(): Promise<ActionResult> {
     return { success: false, error: 'Allow Nomada to access all sites first' };
   }
   const data = await readData();
-  const profileId = selectedProfileOf(data)?.id ?? data.profiles[0]?.id;
+  const profileId = selectedProfileOf(data)?.id ?? (data.failover?.enabled ? failoverChain(data)[0]?.id : undefined) ?? data.profiles[0]?.id;
   if (!profileId) return { success: false, error: 'Add a proxy first' };
   // Know where the user really is before the route changes (for the globe and
   // to tell a proxied answer from one that slipped past the proxy).
   if (!data.realPlace) await refreshRealPlace(true);
 
-  const result = await commit(d => ({ ...d, enabled: true, activeProfileId: profileId }));
+  const result = await commit(d => ({ ...withoutMoves(d), enabled: true, activeProfileId: profileId }));
   if (!result.success) {
     await commit(d => ({ ...d, enabled: false }));
     return result;
   }
-  return refreshProxyPlace(true);
+  return refreshProxyPlace(true, true);
 }
 
 async function disable(): Promise<ActionResult> {
-  const result = await commit(d => ({ ...d, enabled: false }));
+  const result = await commit(withDirect);
   void refreshRealPlace();
   return result;
 }
@@ -126,7 +145,7 @@ async function disable(): Promise<ActionResult> {
 async function selectProfile(id: string): Promise<ActionResult> {
   const data = await readData();
   if (!data.profiles.some(p => p.id === id)) return { success: false, error: 'Profile not found' };
-  const result = await commit(d => ({ ...d, activeProfileId: id }));
+  const result = await commit(d => ({ ...withoutMoves(d), activeProfileId: id }));
   if (!data.enabled) return result;
   if (!result.success) {
     await commit(d => ({ ...d, enabled: false }));
@@ -148,7 +167,16 @@ async function profilesChanged(): Promise<ActionResult> {
 
 async function getState(): Promise<BgState> {
   const data = await readData();
+  const nameOf = (id: string) => data.profiles.find(p => p.id === id)?.name ?? '';
+  const { moved } = data.failover ?? {};
   return {
+    failover: {
+      enabled: !!data.failover?.enabled,
+      chain: failoverChain(data).map(p => p.id),
+      down: data.failover?.down ?? [],
+      moved: moved ? { from: nameOf(moved.from), to: nameOf(moved.to) } : null,
+      exhausted: !!data.failover?.exhausted,
+    },
     enabled: data.enabled,
     profiles: data.profiles,
     activeProfile: selectedProfileOf(data) ?? null,
@@ -165,10 +193,16 @@ if (__TARGET__ === 'firefox') {
   installFirefoxProxy();
   // Firefox has no proxy.onProxyError; an Auto check reads its lookup's network error.
   chrome.webRequest.onErrorOccurred.addListener(d => noteProxyError(d.error), { urls: [`https://${LOOKUP_HOST}/*`] });
+  // ...and failover listens to every request that failed on the way to the proxy.
+  chrome.webRequest.onErrorOccurred.addListener(d => {
+    const { proxyInfo } = d as typeof d & { proxyInfo?: unknown };
+    if (proxyInfo && isProxyFailure(d.error)) void failover.onFailure();
+  }, { urls: ['<all_urls>'] });
 } else {
   chrome.proxy.onProxyError.addListener(details => {
     noteProxyError(details.error);
     console.error('[Nomada] proxy error:', details.error);
+    void failover.onFailure();
   });
 }
 
@@ -239,7 +273,10 @@ async function handle(msg: BgMessage): Promise<unknown> {
       return getState();
     case 'REFRESH_PLACE': {
       const data = await readData();
-      const result = activeProfileOf(data) ? await refreshProxyPlace() : (await refreshRealPlace(), OK);
+      const result = activeProfileOf(data)
+        // They were all silent last time: see whether one is back.
+        ? await (data.failover?.exhausted ? failover.retry() : refreshProxyPlace())
+        : (await refreshRealPlace(), OK);
       return { result, state: await getState() };
     }
     case 'ENABLE':
@@ -252,6 +289,10 @@ async function handle(msg: BgMessage): Promise<unknown> {
       return profilesChanged();
     case 'DETECT_PROXY':
       return serialize(async () => detectProxyType(msg.payload, await readData()));
+    case 'SET_FAILOVER':
+      return commit(d => withFailoverSettings(d, msg.payload));
+    case 'RETRY_FAILOVER':
+      return failover.retry();
   }
 }
 

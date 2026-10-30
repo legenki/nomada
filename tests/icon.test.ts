@@ -41,6 +41,13 @@ describe('refreshIcon', () => {
     expect(setBadgeText).toHaveBeenLastCalledWith({ text: 'DE' });
   });
 
+  it('warns when every failover proxy is silent', async () => {
+    stored = { ...data(true, '#808080'), failover: { enabled: true, order: [], down: ['p1'], exhausted: true } };
+    await refreshIcon();
+    expect(iconPath()).toBe('icons/icon-inactive-16.png');
+    expect(setBadgeText).toHaveBeenLastCalledWith({ text: '!' });
+  });
+
   it('is grey with no badge while off', async () => {
     stored = data(false, '#cf222e');
     await refreshIcon();
