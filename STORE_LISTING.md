@@ -118,7 +118,7 @@ Nomada routes the browser through a user-configured proxy and makes the browser'
 ---
 
 ## Screenshot captions
-1. "One switch — your whole browser moves to your proxy's location."
+1. "One switch moves your browser to your proxy's location — with backups if it stops answering."
 2. "Every proxy shows the country it exits in."
 3. "Paste any proxy — Nomada finds its type and country."
 4. "No proxy yet? Pick a working public one by country."
@@ -133,11 +133,10 @@ Nomada routes the browser through a user-configured proxy and makes the browser'
 - Proxies show the flag of their exit country instead of a colour
 - No new permissions
 
-## Release notes — next version
+## Release notes — 1.4.0
 - Failover: backup proxies in your order; location, timezone and language follow the switch; if none answers, requests are blocked rather than exposed
 - Direct / Proxy switch in the popup
 - No new permissions
-- Before release: retake the store screenshots (the popup's switch has changed)
 
 ## Release notes — 1.3.0
 - Public proxy gallery on the settings page: working public proxies (checked every 6 hours), by country and type, added or used with one click
