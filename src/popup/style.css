@@ -27,6 +27,10 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Browsers cap a popup at about 600px, so a long list scrolls. A classic scrollbar would
+   take its width from the 340px body and bring a horizontal one along. */
+html { overflow-x: hidden; scrollbar-width: none; }
+
 body {
   width: 340px;
   background: var(--bg);
