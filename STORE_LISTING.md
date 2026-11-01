@@ -133,6 +133,10 @@ Nomada routes the browser through a user-configured proxy and makes the browser'
 - Proxies show the flag of their exit country instead of a colour
 - No new permissions
 
+## Release notes — 1.4.1
+- The popup no longer shows scrollbars when the system always displays them; it still scrolls with the wheel or trackpad
+- No new permissions
+
 ## Release notes — 1.4.0
 - Failover: backup proxies in your order; location, timezone and language follow the switch; if none answers, requests are blocked rather than exposed
 - Direct / Proxy switch in the popup
