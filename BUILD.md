@@ -52,3 +52,16 @@ see `public/fonts/LICENSE.md`.
 the settings page downloads.
 
 `npm test` runs the unit tests (Vitest).
+
+## Releasing
+
+1. Bump the version in `manifest.json`, `manifest.firefox.json`, `package.json`
+   and `package-lock.json`, and commit as `chore: release X.Y.Z`.
+2. Run `npm run package` and `npm run package:firefox`.
+3. Upload to the Chrome Web Store and AMO; AMO also needs `nomada-firefox-source.zip`.
+4. Publish the GitHub release, tagged on the release commit:
+
+```sh
+gh release create vX.Y.Z nomada-extension.zip nomada-firefox.zip \
+  --title "Nomada X.Y.Z" --notes-file notes.md
+```
