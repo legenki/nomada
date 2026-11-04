@@ -38,7 +38,8 @@ Nomada keeps those signals in sync, so sites see one consistent place:
 - **Backup proxies.** Put your proxies in order and turn on Failover. If one stops answering, Nomada moves to the next, and your location, timezone and language move with it.
 - **No leaks when proxies fail.** If none answers, requests are blocked rather than sent from your real IP.
 - **A gallery of public proxies.** No proxy yet? Pick a working one by country and type. The list is rechecked every 6 hours.
-- **A globe that shows where you are.** See your real location while on `Direct`, and your route to the proxy while on `Proxy`.
+- **A globe that shows where you are.** See your real location while on `Direct`, and your route to the proxy while on `Proxy`. It turns green while you're protected, and red if no proxy answers.
+- **Light or dark.** Follows your system, or pick one on the settings page.
 - **No account, no banner.** There is nothing to sign up for, and no "debugging this browser" bar.
 
 <div align="center">

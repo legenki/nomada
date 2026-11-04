@@ -133,6 +133,11 @@ Nomada routes the browser through a user-configured proxy and makes the browser'
 - Proxies show the flag of their exit country instead of a colour
 - No new permissions
 
+## Release notes — 1.5.0
+- The globe turns light green while you're protected and reddish when no proxy answers
+- Light / dark switch on the settings page; the popup follows it, and without a choice the system theme is used
+- No new permissions
+
 ## Release notes — 1.4.1
 - The popup no longer shows scrollbars when the system always displays them; it still scrolls with the wheel or trackpad
 - No new permissions
