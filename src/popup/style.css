@@ -11,18 +11,34 @@
   --globe-glow-on: rgba(22, 163, 74, 0.22);
   --globe-accent: #16a34a;
   --globe-muted: #8b939e;
+
+  /* Protected: a faint green planet. */
+  --globe-dot-on: #2f8f5b;
+  --globe-sphere-on: #f1fbf5;
+  --globe-sphere-edge-on: #d3efdf;
+  /* No proxy answers: a faint red one. */
+  --globe-dot-alert: #c2410c;
+  --globe-sphere-alert: #fff5f3;
+  --globe-sphere-edge-alert: #f8d7d1;
+  --globe-glow-alert: rgba(220, 38, 38, 0.24);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --globe-dot: #9aa6b4;
-    --globe-sphere: #1a1e24;
-    --globe-sphere-edge: #121418;
-    --globe-glow: rgba(110, 160, 220, 0.2);
-    --globe-glow-on: rgba(52, 211, 153, 0.2);
-    --globe-accent: #34d399;
-    --globe-muted: #7d8794;
-  }
+:root[data-theme="dark"] {
+  --globe-dot: #9aa6b4;
+  --globe-sphere: #1a1e24;
+  --globe-sphere-edge: #121418;
+  --globe-glow: rgba(110, 160, 220, 0.2);
+  --globe-glow-on: rgba(52, 211, 153, 0.2);
+  --globe-accent: #34d399;
+  --globe-muted: #7d8794;
+
+  --globe-dot-on: #6ee7b7;
+  --globe-sphere-on: #13261d;
+  --globe-sphere-edge-on: #0b1611;
+  --globe-dot-alert: #fca5a5;
+  --globe-sphere-alert: #2b1515;
+  --globe-sphere-edge-alert: #170b0b;
+  --globe-glow-alert: rgba(248, 113, 113, 0.22);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

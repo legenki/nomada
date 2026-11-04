@@ -13,38 +13,65 @@ export interface GlobeScene {
   connecting: boolean;
   /** Failover: the other proxies, faint, or marked when they didn't answer. */
   others?: (LatLon & { down: boolean })[];
+  /** No proxy answers and traffic is blocked: the globe turns red. */
+  alert?: boolean;
 }
 
-interface Palette {
-  dot: string; sphere: string; sphereEdge: string; accent: string; muted: string; warn: string;
-  glow: string; glowFade: string; glowOn: string; glowOnFade: string;
-}
+/** The globe's colour: neutral, green while protected, red when something is wrong. */
+export type Mood = 'off' | 'on' | 'alert';
+export interface Tint { dot: string; sphere: string; sphereEdge: string; glow: string }
 
-/** Same colour with zero alpha. Canvas gradients to 'transparent' fade through black. */
-export function fade(color: string): string {
+interface Palette { tint: Record<Mood, Tint>; accent: string; muted: string; warn: string }
+
+export const moodOf = (scene: GlobeScene): Mood => (scene.alert ? 'alert' : scene.active ? 'on' : 'off');
+
+/** r, g, b, a of a #rgb, #rrggbb or rgb()/rgba() colour; null for anything else. */
+export function parseColor(color: string): [number, number, number, number] | null {
   const m = color.match(/rgba?\(([^)]+)\)/);
   if (m) {
-    const [r, g, b] = m[1].split(',').map(x => x.trim());
-    return `rgba(${r},${g},${b},0)`;
+    const [r, g, b, a = 1] = m[1].split(',').map(x => parseFloat(x));
+    return [r, g, b, a];
   }
   const clean = color.trim().replace(/^#/, '');
   if (/^[0-9a-f]{3}$/i.test(clean)) {
-    const r = parseInt(clean[0] + clean[0], 16);
-    const g = parseInt(clean[1] + clean[1], 16);
-    const b = parseInt(clean[2] + clean[2], 16);
-    return `rgba(${r},${g},${b},0)`;
+    const [r, g, b] = [0, 1, 2].map(i => parseInt(clean[i] + clean[i], 16));
+    return [r, g, b, 1];
   }
   const hex6 = /^([0-9a-f]{6})/i.exec(clean);
   if (hex6) {
     const n = parseInt(hex6[1], 16);
-    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},0)`;
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1];
   }
-  return 'rgba(0,0,0,0)';
+  return null;
+}
+
+/** Same colour with zero alpha. Canvas gradients to 'transparent' fade through black. */
+export function fade(color: string): string {
+  const [r, g, b] = parseColor(color) ?? [0, 0, 0];
+  return `rgba(${r},${g},${b},0)`;
+}
+
+/** The colour k of the way from a to b (0..1); b if either can't be read. */
+export function mixColor(a: string, b: string, k: number): string {
+  const from = parseColor(a), to = parseColor(b);
+  if (!from || !to) return b;
+  const [r, g, bl, al] = from.map((x, i) => x + (to[i] - x) * k);
+  return `rgba(${Math.round(r)},${Math.round(g)},${Math.round(bl)},${+al.toFixed(3)})`;
+}
+
+export function mixTint(a: Tint, b: Tint, k: number): Tint {
+  return {
+    dot: mixColor(a.dot, b.dot, k),
+    sphere: mixColor(a.sphere, b.sphere, k),
+    sphereEdge: mixColor(a.sphereEdge, b.sphereEdge, k),
+    glow: mixColor(a.glow, b.glow, k),
+  };
 }
 
 const DOT_STEP_DEG = 2.3;   // spacing of the land dot grid
 const FRAME_MS = 1000 / 40; // cap the loop; it's a popup, not a game
 const EASE_MS = 1100;
+const TINT_MS = 600;        // colour change between moods
 
 /** Unit vector for a lon/lat in degrees. */
 function vec(lon: number, lat: number): [number, number, number] {
@@ -65,6 +92,10 @@ export class Globe {
   private dots: { lon: number; lat: number; v: [number, number, number] }[] = [];
   private palette: Palette;
   private scene: GlobeScene = { real: null, proxy: null, active: false, connecting: false };
+  private mood: Mood = 'off';
+  /** Colour at the moment the mood changed, while easing to the new one. */
+  private tintFrom: Tint | null = null;
+  private tintStart = 0;
 
   // View rotation as [lambda, phi] (d3 rotate), eased toward a focus point.
   private view: [number, number] = [0, -10];
@@ -119,6 +150,13 @@ export class Globe {
 
   setScene(scene: GlobeScene): void {
     const focus = this.focusOf(scene);
+    const mood = moodOf(scene);
+    if (mood !== this.mood) {
+      const now = performance.now();
+      this.tintFrom = this.tintAt(now);
+      this.tintStart = now;
+      this.mood = mood;
+    }
     this.scene = scene;
     if (focus) this.easeTo([-focus.lon, -focus.lat]);
   }
@@ -126,6 +164,7 @@ export class Globe {
   /** Re-read colours (e.g. after a light/dark switch). */
   refreshPalette(): void {
     this.palette = this.readPalette();
+    this.tintFrom = null;
   }
 
   start(): void {
@@ -149,18 +188,28 @@ export class Globe {
   private readPalette(): Palette {
     const css = getComputedStyle(this.canvas);
     const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+    const tint = (suffix: string, base: Tint): Tint => ({
+      dot: v(`--globe-dot${suffix}`, base.dot),
+      sphere: v(`--globe-sphere${suffix}`, base.sphere),
+      sphereEdge: v(`--globe-sphere-edge${suffix}`, base.sphereEdge),
+      glow: v(`--globe-glow${suffix}`, base.glow),
+    });
+    const off = tint('', { dot: '#7c8794', sphere: '#f4f6f9', sphereEdge: '#dfe4ea', glow: 'rgba(120,150,190,0.35)' });
     return {
-      dot: v('--globe-dot', '#7c8794'),
-      sphere: v('--globe-sphere', '#f4f6f9'),
-      sphereEdge: v('--globe-sphere-edge', '#dfe4ea'),
-      glow: v('--globe-glow', 'rgba(120,150,190,0.35)'),
-      glowFade: fade(v('--globe-glow', 'rgba(120,150,190,0.35)')),
-      glowOn: v('--globe-glow-on', 'rgba(22,163,74,0.3)'),
-      glowOnFade: fade(v('--globe-glow-on', 'rgba(22,163,74,0.3)')),
+      tint: { off, on: tint('-on', off), alert: tint('-alert', off) },
       accent: v('--globe-accent', '#1f9d55'),
       muted: v('--globe-muted', '#5b6673'),
       warn: v('--warn', '#b42318'),
     };
+  }
+
+  /** The globe's colours now: the mood's, or on the way to them. */
+  private tintAt(now: number): Tint {
+    const to = this.palette.tint[this.mood];
+    if (!this.tintFrom) return to;
+    const t = (now - this.tintStart) / TINT_MS;
+    if (t >= 1) { this.tintFrom = null; return to; }
+    return mixTint(this.tintFrom, to, easeInOut(Math.max(0, t)));
   }
 
   /** Centre on the proxy when active; frame both ends of the trip when they fit. */
@@ -204,24 +253,24 @@ export class Globe {
     ctx.clearRect(0, 0, size, size);
     proj.rotate([this.view[0], this.view[1], 0]);
 
-    // Atmosphere glow behind the sphere, tinted while the proxy route is live.
-    const on = this.scene.active;
+    // Atmosphere glow, sphere and land share the mood's colour.
+    const tint = this.tintAt(now);
     const glow = ctx.createRadialGradient(cx, cy, r * 0.96, cx, cy, r * 1.3);
-    glow.addColorStop(0, on ? c.glowOn : c.glow);
-    glow.addColorStop(1, on ? c.glowOnFade : c.glowFade);
+    glow.addColorStop(0, tint.glow);
+    glow.addColorStop(1, fade(tint.glow));
     ctx.fillStyle = glow;
     ctx.beginPath(); ctx.arc(cx, cy, r * 1.3, 0, Math.PI * 2); ctx.fill();
 
     // Sphere body, lit from the top-left.
     const body = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.1, cx, cy, r);
-    body.addColorStop(0, c.sphere);
-    body.addColorStop(1, c.sphereEdge);
+    body.addColorStop(0, tint.sphere);
+    body.addColorStop(1, tint.sphereEdge);
     ctx.fillStyle = body;
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
 
     // Land dots, fading and shrinking toward the limb for depth.
     const center = vec(-this.view[0], -this.view[1]);
-    ctx.fillStyle = c.dot;
+    ctx.fillStyle = tint.dot;
     for (const d of this.dots) {
       const cos = d.v[0] * center[0] + d.v[1] * center[1] + d.v[2] * center[2];
       if (cos <= 0.02) continue;

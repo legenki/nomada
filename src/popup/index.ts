@@ -186,6 +186,7 @@ function render(): void {
     active: on && s.protected && !exhausted,
     connecting: connecting || (on && !s.protected && !exhausted),
     others: on && s.failover.enabled ? otherProxies(s) : [],
+    alert: on && exhausted && !connecting,
   });
   renderProxies(s, on);
 }
@@ -308,7 +309,8 @@ proxyList.addEventListener('click', e => {
 
 $<HTMLButtonElement>('#manage').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => globe.refreshPalette());
+// theme.js switches data-theme (system change or a pick on the settings page).
+new MutationObserver(() => globe.refreshPalette()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 setInterval(tickClock, 1000);
 
 // ── Start ───────────────────────────────────────────────────────────────────

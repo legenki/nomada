@@ -8,6 +8,7 @@ import { parseProxyString } from './parse';
 import { countryName, initGallery } from './gallery';
 import { findProfile, publicProfile } from '../lib/public-proxies';
 import { validateProfile, type ValidationError } from './validate';
+import { chooseTheme, type Theme } from '../lib/theme';
 
 type ProxyType = ProxyConfig['type'];
 /** 'auto' finds the type on save. */
@@ -465,6 +466,13 @@ renderGallery = initGallery({
   add: async p => { await addPublic(p); },
   use: usePublic,
 }).render;
+
+// Light / dark: theme.js has set data-theme already; the switch shows it and changes it.
+const themeRadios = document.querySelectorAll<HTMLInputElement>('input[name="theme"]');
+const showTheme = () => themeRadios.forEach(r => { r.checked = r.value === document.documentElement.dataset.theme; });
+themeRadios.forEach(r => r.addEventListener('change', () => chooseTheme(r.value as Theme)));
+new MutationObserver(showTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+showTheme();
 
 chrome.storage.onChanged.addListener((changes, area) => {
   // The public list's cache lives in local storage too; it doesn't change profiles.

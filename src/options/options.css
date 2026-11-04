@@ -21,7 +21,9 @@ button, input { font: inherit; color: inherit; }
 .page { max-width: 640px; margin: 0 auto; padding: 28px 16px 96px; }
 
 /* ── Header ── */
-.bar { padding: 0 4px 28px; }
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px 28px; }
+.segmented.theme span { display: grid; place-items: center; padding: 6px 11px; }
+.theme .icon { width: 16px; height: 16px; }
 .brand {
   display: flex;
   align-items: center;

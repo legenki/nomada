@@ -3,7 +3,7 @@ import { escHtml, safeColor } from '../src/lib/html';
 import { activeProfileOf, isProtected, proxyPlaceOf } from '../src/lib/state';
 import { resolveIconPaths } from '../src/lib/icon-paths';
 import { nearestIconColor } from '../src/lib/icon-color';
-import { fade } from '../src/popup/globe';
+import { fade, mixColor, mixTint, moodOf, parseColor } from '../src/popup/globe';
 import { languagesFor } from '../src/lib/country-locales';
 import type { WooPortalData } from '../src/types';
 
@@ -88,5 +88,38 @@ describe('resolveIconPaths', () => {
     expect(resolveIconPaths(true, null)['16']).toBe('icons/icon-active-green-16.png');
     expect(resolveIconPaths(true, 'red')['16']).toBe('icons/icon-active-red-16.png');
     expect(resolveIconPaths(true, 'magenta')['16']).toBe('icons/icon-active-green-16.png');
+  });
+});
+
+describe('globe colours', () => {
+  it('reads hex and rgb(a) colours', () => {
+    expect(parseColor('#16a34a')).toEqual([22, 163, 74, 1]);
+    expect(parseColor('#fff')).toEqual([255, 255, 255, 1]);
+    expect(parseColor('rgba(220, 38, 38, 0.24)')).toEqual([220, 38, 38, 0.24]);
+    expect(parseColor('rgb(1, 2, 3)')).toEqual([1, 2, 3, 1]);
+    expect(parseColor('red')).toBeNull();
+  });
+
+  it('mixes from one colour to the other', () => {
+    expect(mixColor('#000000', '#ffffff', 0)).toBe('rgba(0,0,0,1)');
+    expect(mixColor('#000000', '#ffffff', 0.5)).toBe('rgba(128,128,128,1)');
+    expect(mixColor('rgba(0,0,0,0.2)', 'rgba(200,100,0,0.4)', 1)).toBe('rgba(200,100,0,0.4)');
+    expect(mixColor('red', '#16a34a', 0.5)).toBe('#16a34a');
+  });
+
+  it('mixes every part of a tint', () => {
+    const a = { dot: '#000', sphere: '#000', sphereEdge: '#000', glow: 'rgba(0,0,0,0)' };
+    const b = { dot: '#fff', sphere: '#fff', sphereEdge: '#fff', glow: 'rgba(255,255,255,1)' };
+    expect(mixTint(a, b, 1)).toEqual({
+      dot: 'rgba(255,255,255,1)', sphere: 'rgba(255,255,255,1)', sphereEdge: 'rgba(255,255,255,1)', glow: 'rgba(255,255,255,1)',
+    });
+  });
+
+  it('is red when something is wrong, green while protected, neutral otherwise', () => {
+    const scene = { real: null, proxy: null, active: false, connecting: false };
+    expect(moodOf(scene)).toBe('off');
+    expect(moodOf({ ...scene, connecting: true })).toBe('off');
+    expect(moodOf({ ...scene, active: true })).toBe('on');
+    expect(moodOf({ ...scene, alert: true })).toBe('alert');
   });
 });
